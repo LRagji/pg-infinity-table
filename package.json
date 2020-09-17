@@ -1,0 +1,32 @@
+{
+  "name": "pg-infinity-table",
+  "version": "0.0.1",
+  "description": "This package can be used to create long tables across multiple different databases.",
+  "main": "index.js",
+  "scripts": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LRagji/pg-infinity-table.git"
+  },
+  "keywords": [
+    "infinity",
+    "table",
+    "pg",
+    "cluster",
+    "large",
+    "tabbles"
+  ],
+  "author": "laukik",
+  "license": "SEE LICENSE IN license.md",
+  "bugs": {
+    "url": "https://github.com/LRagji/pg-infinity-table/issues"
+  },
+  "homepage": "https://github.com/LRagji/pg-infinity-table#readme",
+  "dependencies": {
+    "ioredis": "^4.17.3",
+    "pg-promise": "^10.6.1",
+    "redis-scripto": "^0.1.3"
+  }
+}
