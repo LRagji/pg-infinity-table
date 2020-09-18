@@ -2,10 +2,11 @@
 const redisType = require("ioredis");
 const scripto = require('redis-scripto');
 const path = require('path');
-const pgp = require('pg-promise')();
+const pgp = require('pg-promise')({
+    schema: 'public' // default schema(s)
+});
 
 const inventory_key = "Inventory";
-const default_schema = "public";
 pgp.pg.types.setTypeParser(20, BigInt); // This is for serialization bug of BigInts as strings.
 const InfinityStampTag = "InfStamp";
 const InfinityIdTag = "InfId";
@@ -65,9 +66,9 @@ class InfinityTableFactory {
 
 
     async registerResource(readerConnectionParams, writerConnectionParams, maxTables, maxRowsPerTable) {
-        return await this.#configDBWriter.tx(async (trans) => {
+        return this.#configDBWriter.tx(async (trans) => {
             // creating a sequence of transaction queries:
-            let rIdentifier = await trans.one('INSERT INTO "Resources" ("Read","Write","MaxTables","MaxRows") values ($1,$2,$3,$4) RETURNING "Id";', [JSON.stringify(readerConnectionParams), JSON.stringify(writerConnectionParams), maxTables, maxRowsPerTable]);
+            let rIdentifier = await trans.one('INSERT INTO "Resources" ("Read","Write","MaxTables","MaxRows") values ($1:json,$2:json,$3,$4) RETURNING "Id";', [readerConnectionParams, writerConnectionParams, maxTables, maxRowsPerTable]);
 
             let redisRegister = (rId, countOfTables, rowsPerTable) => new Promise((resolve, reject) => this.#scriptingEngine.run('load-resources', [inventory_key], [rId, countOfTables, rowsPerTable], function (err, result) {
                 if (err != undefined) {
@@ -281,7 +282,7 @@ class InfinityTable {
         tableColumns = tableColumns.slice(0, -1);
         indexColumns = indexColumns.slice(0, -1);
 
-        let functionSql = `CREATE OR REPLACE FUNCTION $[schema_name:name].$[function_name:name] (IN name TEXT) RETURNS VOID
+        let functionSql = `CREATE OR REPLACE FUNCTION $[function_name:name] (IN name TEXT) RETURNS VOID
         LANGUAGE 'plpgsql'
         AS $$
         DECLARE
@@ -291,12 +292,11 @@ class InfinityTable {
         dsql TEXT;
         BEGIN
         dsql:= 'SELECT pg_advisory_lock(hashtext($1)); ';
-        dsql:= dsql ||'CREATE TABLE IF NOT EXISTS $[schema_name:name].'|| quote_ident(table_name) || '($[columns:raw] ,CONSTRAINT '|| quote_ident(primarykey_name)||' PRIMARY KEY ($[primaryKeyColumns:raw])); ';
-        dsql:= dsql ||'CREATE INDEX IF NOT EXISTS '|| quote_ident(index_name) ||' ON $[schema_name:name].' || quote_ident(table_name) || ' ($[indexColumns:raw]);';
+        dsql:= dsql ||'CREATE TABLE IF NOT EXISTS '|| quote_ident(table_name) || '($[columns:raw] ,CONSTRAINT '|| quote_ident(primarykey_name)||' PRIMARY KEY ($[primaryKeyColumns:raw])); ';
+        dsql:= dsql ||'CREATE INDEX IF NOT EXISTS '|| quote_ident(index_name) ||' ON ' || quote_ident(table_name) || ' ($[indexColumns:raw]);';
         EXECUTE dsql USING table_name;
         END$$;`;
         await currentWriterConnection.none(pgp.as.format(functionSql, {
-            "schema_name": default_schema,
             "function_name": ("infinity_part_" + this.TableIdentifier),
             "table_name": this.TableIdentifier + "-" + databaseId,
             "columns": tableColumns,
@@ -304,7 +304,7 @@ class InfinityTable {
             "indexColumns": indexColumns
         }));
 
-        await currentWriterConnection.one(`SELECT "${default_schema}"."infinity_part_${this.TableIdentifier}"('${tableId}')`);
+        await currentWriterConnection.one(`SELECT "infinity_part_${this.TableIdentifier}"('${tableId}')`);
         return `${this.TableIdentifier}-${databaseId}-${tableId}`;
     }
 
@@ -314,27 +314,27 @@ class InfinityTable {
         let columns = this.#columnsNames.reduce((acc, e) => acc + `${pgp.as.format('$1:alias', [e])},`, "");
         columns = columns.slice(0, -1);
         valuesString = valuesString.slice(0, -1)
-        return `INSERT INTO "${default_schema}"."${tableName}" (${columns}) VALUES ${valuesString} RETURNING *`;
+        return `INSERT INTO "${tableName}" (${columns}) VALUES ${valuesString} RETURNING *`;
     }
 
     #indexPrimarykey = (tableName, payload) => {
 
         let valuesString = payload.reduce((valuesString, element) => valuesString += pgp.as.format("($1,$2),", [element.UserPk, element.InfinityRowId]), "");
         valuesString = valuesString.slice(0, -1)
-        return `INSERT INTO "${default_schema}"."${tableName}" ("UserPK","CInfId") VALUES ${valuesString};`;
+        return `INSERT INTO "${tableName}" ("UserPK","CInfId") VALUES ${valuesString};`;
     }
 
     #indexInfinityStampMin = (tableName, payload, PInfId) => {
 
         let min = payload.reduce((min, element) => Math.min(min, element.InfinityStamp), Number.MAX_VALUE);
-        return `INSERT INTO "${default_schema}"."${tableName}" ("InfStamp","PInfId") VALUES (${min},'${PInfId}') ON CONFLICT ON CONSTRAINT "${tableName + "-PK"}"
+        return `INSERT INTO "${tableName}" ("InfStamp","PInfId") VALUES (${min},'${PInfId}') ON CONFLICT ON CONSTRAINT "${tableName + "-PK"}"
         DO UPDATE SET "InfStamp" = LEAST(EXCLUDED."InfStamp","${tableName}"."InfStamp")`;
     }
 
     #indexInfinityStampMax = (tableName, payload, PInfId) => {
 
         let max = payload.reduce((max, element) => Math.max(max, element.InfinityStamp), Number.MIN_VALUE);
-        return `INSERT INTO "${default_schema}"."${tableName}" ("InfStamp","PInfId") VALUES (${max},'${PInfId}') ON CONFLICT ON CONSTRAINT "${tableName + "-PK"}"
+        return `INSERT INTO "${tableName}" ("InfStamp","PInfId") VALUES (${max},'${PInfId}') ON CONFLICT ON CONSTRAINT "${tableName + "-PK"}"
         DO UPDATE SET "InfStamp" = GREATEST(EXCLUDED."InfStamp","${tableName}"."InfStamp")`;
     }
 
