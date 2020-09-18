@@ -10,6 +10,7 @@ pgp.pg.types.setTypeParser(20, BigInt); // This is for serialization bug of BigI
 const InfinityStampTag = "InfStamp";
 const InfinityIdTag = "InfId";
 const PrimaryTag = "primary";
+let counter = 0;
 module.exports = class InfinityTableFactory {
     #pgReadConfigParams
     #pgWriteConfigParams
@@ -60,13 +61,13 @@ module.exports = class InfinityTableFactory {
     async createTable(tableDefinition) {
 
         const infinityIdColumn = {
-            "name": "InfId",
+            "name": InfinityIdTag,
             "datatype": "bigint",
             "filterable": { "sorted": "asc" },
             "tag": InfinityIdTag
         };
         const infinityStampColumn = {
-            "name": "InfStamp",
+            "name": InfinityStampTag,
             "datatype": "bigint",
             "filterable": { "sorted": "asc" },
             "tag": InfinityStampTag
@@ -96,21 +97,21 @@ module.exports = class InfinityTableFactory {
                 await trans.none(`CREATE TABLE public."${tIdentifier.Id}-PK"
                 (
                     "UserPK" ${userDefinedPKDatatype} NOT NULL,
-                    "CInfID" text NOT NULL,
+                    "CInfId" text NOT NULL,
                     PRIMARY KEY ("UserPK")
                 );`); //THIS table should be partitioned with HASH for 20CR rows
             }
             await trans.none(`CREATE TABLE public."${tIdentifier.Id}-Min"
             (
                 "InfStamp" bigint NOT NULL,
-                "PInfID" text NOT NULL,
-                CONSTRAINT "${tIdentifier.Id}-Min-PK" PRIMARY KEY ("PInfID")
+                "PInfId" text NOT NULL,
+                CONSTRAINT "${tIdentifier.Id}-Min-PK" PRIMARY KEY ("PInfId")
             );`);
             await trans.none(`CREATE TABLE public."${tIdentifier.Id}-Max"
             (
                 "InfStamp" bigint NOT NULL,
-                "PInfID" text NOT NULL,
-                CONSTRAINT "${tIdentifier.Id}-Max-PK" PRIMARY KEY ("PInfID")
+                "PInfId" text NOT NULL,
+                CONSTRAINT "${tIdentifier.Id}-Max-PK" PRIMARY KEY ("PInfId")
             );`);
             return tIdentifier.Id;
         });
@@ -155,6 +156,10 @@ class InfinityTable {
         this.datatypes.set("integer", "integer");
         this.datatypes.set("text", "text");
         this.datatypes.set("double", "double precision");
+        this.filterOperators = new Map();
+        this.filterOperators.set("=", function (name, operands) { return pgp.as.format("$1:name = $2", [name, operands[0]]); });
+        this.filterOperators.set("IN", function (name, operands) { return pgp.as.format("$1:name IN $2", [name, operands]); });
+
         this.#columnsNames = this.#def.map(e => e.name);
 
         this.#generateIdentity = this.#generateIdentity.bind(this);
@@ -289,20 +294,20 @@ class InfinityTable {
 
         let valuesString = payload.reduce((valuesString, element) => valuesString += pgp.as.format("($1,$2),", [element.UserPk, element.InfinityRowId]), "");
         valuesString = valuesString.slice(0, -1)
-        return `INSERT INTO "${default_schema}"."${tableName}" ("UserPK","CInfID") VALUES ${valuesString};`;
+        return `INSERT INTO "${default_schema}"."${tableName}" ("UserPK","CInfId") VALUES ${valuesString};`;
     }
 
-    #indexInfinityStampMin = (tableName, payload, PInfID) => {
+    #indexInfinityStampMin = (tableName, payload, PInfId) => {
 
         let min = payload.reduce((min, element) => Math.min(min, element.InfinityStamp), Number.MAX_VALUE);
-        return `INSERT INTO "${default_schema}"."${tableName}" ("InfStamp","PInfID") VALUES (${min},'${PInfID}') ON CONFLICT ON CONSTRAINT "${tableName + "-PK"}"
+        return `INSERT INTO "${default_schema}"."${tableName}" ("InfStamp","PInfId") VALUES (${min},'${PInfId}') ON CONFLICT ON CONSTRAINT "${tableName + "-PK"}"
         DO UPDATE SET "InfStamp" = LEAST(EXCLUDED."InfStamp","${tableName}"."InfStamp")`;
     }
 
-    #indexInfinityStampMax = (tableName, payload, PInfID) => {
+    #indexInfinityStampMax = (tableName, payload, PInfId) => {
 
         let max = payload.reduce((max, element) => Math.max(max, element.InfinityStamp), Number.MIN_VALUE);
-        return `INSERT INTO "${default_schema}"."${tableName}" ("InfStamp","PInfID") VALUES (${max},'${PInfID}') ON CONFLICT ON CONSTRAINT "${tableName + "-PK"}"
+        return `INSERT INTO "${default_schema}"."${tableName}" ("InfStamp","PInfId") VALUES (${max},'${PInfId}') ON CONFLICT ON CONSTRAINT "${tableName + "-PK"}"
         DO UPDATE SET "InfStamp" = GREATEST(EXCLUDED."InfStamp","${tableName}"."InfStamp")`;
     }
 
@@ -328,7 +333,9 @@ class InfinityTable {
             let scopedRowId = lastChange[3];
             let completeRowId = `${this.TableIdentifier}-${dbId}-${tableId}-${scopedRowId}`;
             lastChange[3]++;
-            let item = { "InfinityRowId": completeRowId, "Values": [], "InfinityStamp": Date.now() };
+            let item = { "InfinityRowId": completeRowId, "Values": [], "InfinityStamp": counter };
+            counter++;
+            //let item = { "InfinityRowId": completeRowId, "Values": [], "InfinityStamp": Date.now() };
 
             this.#def.forEach(columnDef => {
                 let colValue = value[columnDef.name];
@@ -439,7 +446,7 @@ class InfinityTable {
         let disintegratedIds;
 
         if (this.#userDefinedPk) {
-            disintegratedIds = await this.#configDBReader.any('SELECT "UserPK" AS "ActualId", split_part("CInfID",$3,1)::Int as "Type",split_part("CInfID",$3,2)::Int as "DBId",split_part("CInfID",$3,3)::Int as "TableNo", "UserPK" as "Row" FROM $1:name WHERE "UserPK" = ANY ($2)', [(this.TableIdentifier + '-PK'), ids,'-']);
+            disintegratedIds = await this.#configDBReader.any('SELECT "UserPK" AS "ActualId", split_part("CInfId",$3,1)::Int as "Type",split_part("CInfId",$3,2)::Int as "DBId",split_part("CInfId",$3,3)::Int as "TableNo", "UserPK" as "Row" FROM $1:name WHERE "UserPK" = ANY ($2)', [(this.TableIdentifier + '-PK'), ids, '-']);
         }
         else {
             disintegratedIds = ids.map((id) => {
@@ -485,7 +492,7 @@ class InfinityTable {
                     let acquiredId = acquiredObject[this.#primaryColumn.name];
                     if (this.#userDefinedPk === false) {
                         acquiredId = this.#idConstruct(dbId, currentTable, acquiredId);
-                        acquiredObject[InfinityIdTag]=acquiredId;
+                        acquiredObject[InfinityIdTag] = acquiredId;
                     }
                     let spliceIdx = ids.indexOf(acquiredId);
                     if (spliceIdx === -1) throw new Error("Database returned extra id:" + acquiredId);
@@ -499,71 +506,90 @@ class InfinityTable {
         return results;
     }
 
-    async retrive(ids) {
-        let results = { "results": [], "page": [] };
-        let disintegratedIds;
-
-        if (this.#userDefinedPk) {
-            disintegratedIds = await this.#configDBReader.any('SELECT "UserPK" AS "ActualId", split_part("CInfID",$3,1)::Int as "Type",split_part("CInfID",$3,2)::Int as "DBId",split_part("CInfID",$3,3)::Int as "TableNo", "UserPK" as "Row" FROM $1:name WHERE "UserPK" = ANY ($2)', [(this.TableIdentifier + '-PK'), ids,'-']);
-        }
-        else {
-            disintegratedIds = ids.map((id) => {
-                let verifyId = this.#idParser(id);
-                if (verifyId.Type !== this.TableIdentifier) throw new Error("Incorrect Id:" + id + " doesnot belong to this table.");
-                verifyId.ActualId = id;
-                return verifyId
-            });
-        }
-
-        let groupedIds = disintegratedIds.reduce((acc, e) => {
-            if (acc.has(e.DBId)) {
-                let tablesMap = acc.get(e.DBId);
-                if (tablesMap.has(e.TableNo)) {
-                    tablesMap.get(e.TableNo).push({ "Row": e.Row, "ActualId": e.ActualId });
-                }
-                else {
-                    tablesMap.set(e.TableNo, [{ "Row": e.Row, "ActualId": e.ActualId }]);
-                }
+    async search(start, end, filter, pages = []) {
+        // "filter": {
+        //     "conditions": [
+        //         {
+        //             "name": "severity",
+        //             "operator": "=",
+        //             "values": [
+        //                 1
+        //             ]
+        //         }
+        //     ],
+        //     "combine": "${0} AND ${1} OR ${2}"
+        // }
+        let results = { "results": [], "pages": [] };
+        let pageSql;
+        if (pages == undefined || pages.length === 0) {
+            if (start != undefined && end != undefined) {
+                pageSql = pgp.as.format(`SELECT "Min"."InfStamp" as "Start", "Max"."InfStamp" as "End",
+                split_part("Max"."PInfId",$1,1)::Int as "Type",
+                split_part("Max"."PInfId",$1,2)::Int as "DBId",
+                split_part("Max"."PInfId",$1,3)::Int as "TableNo",
+                "Max"."PInfId" as "Page"
+                FROM $4:name as "Max" JOIN $5:name as "Min" ON "Max"."PInfId"="Min"."PInfId"
+                WHERE $2 < "Max"."InfStamp" AND  $3 > "Min"."InfStamp"
+                ORDER BY "Min"."InfStamp"`, ['-', start, end, (this.TableIdentifier + "-Max"), (this.TableIdentifier + "-Min")]);
             }
             else {
-                let tableMap = new Map();
-                tableMap.set(e.TableNo, [{ "Row": e.Row, "ActualId": e.ActualId }]);
-                acc.set(e.DBId, tableMap);
-            }
-            return acc;
-        }, new Map());
-
-        let DBIds = Array.from(groupedIds.keys())
-        for (let dbIdx = 0; dbIdx < DBIds.length; dbIdx++) {
-            const dbId = DBIds[dbIdx];
-            const tables = groupedIds.get(dbId);
-            const tableIds = Array.from(tables.keys());
-            for (let tableIdx = 0; tableIdx < tableIds.length; tableIdx++) {
-                const DBReader = await this.#retriveConnectionForDB(dbId);
-                const currentTable = tableIds[tableIdx];
-                const currentTableIds = tables.get(currentTable);
-                const onlyIds = currentTableIds.map(e => e.Row);
-                //TODO There is a case where table doesnt exists as the DB/Table went rouge/missing.
-                let data = await DBReader.any("SELECT * FROM $1:name WHERE $2:name = ANY ($3)", [this.#idConstruct(dbId, currentTable), this.#primaryColumn.name, onlyIds]);
-                for (let index = 0; index < data.length; index++) {
-                    const acquiredObject = data[index];
-                    let acquiredId = acquiredObject[this.#primaryColumn.name];
-                    if (this.#userDefinedPk === false) {
-                        acquiredId = this.#idConstruct(dbId, currentTable, acquiredId);
-                        acquiredObject[InfinityIdTag]=acquiredId;
-                    }
-                    let spliceIdx = ids.indexOf(acquiredId);
-                    if (spliceIdx === -1) throw new Error("Database returned extra id:" + acquiredId);
-                    ids.splice(spliceIdx, 1);
-                }
-                results.results = data;
-                results.page = ids;
-                return results;
+                pageSql = pgp.as.format(`SELECT "Min"."InfStamp" as "Start", "Max"."InfStamp" as "End",
+                split_part("Max"."PInfId",$1,1)::Int as "Type",
+                split_part("Max"."PInfId",$1,2)::Int as "DBId",
+                split_part("Max"."PInfId",$1,3)::Int as "TableNo",
+                "Max"."PInfId" as "Page"
+                FROM $4:name as "Max" JOIN $5:name as "Min" ON "Max"."PInfId"="Min"."PInfId"
+                ORDER BY "Min"."InfStamp"`, ['-', start, end, (this.TableIdentifier + "-Max"), (this.TableIdentifier + "-Min")]);
             }
         }
+        else {
+            pageSql = pgp.as.format(`SELECT "Min"."InfStamp" as "Start", "Max"."InfStamp" as "End",
+            split_part("Max"."PInfId",$1,1)::Int as "Type",
+            split_part("Max"."PInfId",$1,2)::Int as "DBId",
+            split_part("Max"."PInfId",$1,3)::Int as "TableNo",
+            "Max"."PInfId" as "Page"
+            FROM $2:name as "Max" JOIN $3:name as "Min" ON "Max"."PInfId"="Min"."PInfId"
+            WHERE "Max"."PInfId" = ANY ($4)
+            ORDER BY "Min"."InfStamp"`, ['-', (this.TableIdentifier + "-Max"), (this.TableIdentifier + "-Min"), pages]);
+
+        }
+        pages = await this.#configDBReader.any(pageSql);
+        if (pages.length > 0) {
+            let searchPage = pages.shift();
+            results.pages = pages.map(e => ({ "page": e.Page, "start": e.Start, "end": e.End }));
+            let where = "";
+            if (filter !== undefined) {
+                let conditions = filter.conditions.map(c => {
+                    if (this.#columnsNames.indexOf(c.name) === -1) {
+                        throw new Error(`Field ${c.name} is not a part of this table.`);
+                    }
+                    if (this.filterOperators.has(c.operator) == false) {
+                        throw new Error(`Operator ${c.operator} not supported.`);
+                    }
+                    return this.filterOperators.get(c.operator)(c.name, c.values);
+                });
+                where = pgp.as.format(filter.combine, conditions);
+            }
+            let searchQuery;
+            if (where == undefined || where === "") {
+                searchQuery = pgp.as.format("SELECT * FROM $1:name", [this.#idConstruct(searchPage.DBId, searchPage.TableNo)])
+            }
+            else {
+                searchQuery = pgp.as.format("SELECT * FROM $1:name WHERE $2:raw", [this.#idConstruct(searchPage.DBId, searchPage.TableNo), where]);
+            }
+            const DBReader = await this.#retriveConnectionForDB(searchPage.DBId);
+            results.results = await DBReader.any(searchQuery);
+            if (this.#userDefinedPk) {
+                results.results = results.results.map(e => {
+                    e[InfinityIdTag] = this.#idConstruct(searchPage.DBId, searchPage.TableNo, e[InfinityIdTag]);
+                    return e;
+                });
+            }
+        }
+
         return results;
     }
-    
+
     bulkUpdate() {
 
     }
