@@ -1,13 +1,13 @@
 # pg-infinity-table
 
-This package combines redis cache and multiple postgres database together to form a large table spanning across DBs, and provides with following features
+This package combines redis cache and multiple postgres database together to contain a large(infinite) tables spanning across DBs,with following features
 1. Row count partitioning.
-
 2. Search with inbuilt time ranges.
 3. Self Id generation or User provided Ids for primary key(user provided id limited to 20000000).
 4. Custom schema defination.
 6. Custom indexes.
 7. Normal CRUD operations.
+8. Paginated results for all calls.
 
 ## Getting Started
 
@@ -21,37 +21,65 @@ This package combines redis cache and multiple postgres database together to for
 
 ## Examples/Code snippets
 
+1. **Initialize**
 ```javascript
-const targetType = require('partition-pg').default;
-const pgp = require('pg-promise')();
-const defaultConectionString = "postgres://postgres:mysecretpassword@localhost:5432/pgpartition?application_name=perf-test";
-const tableName = "Raw", schemaName = "Anukram";
+const infinityTableType = require('pg-infinity-table');
+const metaRedisConectionString = "redis://127.0.0.1:6379/";
+const metaPGConectionString = "postgres://postgres:mysecretpassword@localhost:5432/pg-infinity-meta?application_name=perf-test";
 const readConfigParams = {
     connectionString: defaultConectionString,
-    application_name: "e2e Test",
+    application_name: "Infinity Test",
     max: 4 //4 readers
 };
 const writeConfigParams = {
     connectionString: defaultConectionString,
+    application_name: "Infinity Test",
+    max: 2 //2 Writer
+};
+const infinityDatabase = await infinityTableType(metaRedisConectionString, readConfigParams, writeConfigParams)
+```
+
+2. **Add Resources**
+```javascript
+const maxTablesPerResource = 1000; //Maximum Tables that will be used to create infinity tables.
+const maxRowsPerTable = 100; //<-Row Partitioning
+const readConfigParamsDB1 = {
+    connectionString: "postgres://postgres:@localhost:5432/Infinity-1",
+    application_name: "e2e Test",
+    max: 4 //4 readers
+};
+const writeConfigParamsDB1 = {
+    connectionString: "postgres://postgres:@localhost:5432/Infinity-1",
     application_name: "e2e Test",
     max: 2 //2 Writer
 };
-const _dbRConnection = pgp(readConfigParams);
-const _dbWConnection = pgp(writeConfigParams);
-const tableSchema = [
-{
+const readConfigParamsDB2 = {
+    connectionString: "postgres://postgres:@localhost:5432/Infinity-2",
+    application_name: "e2e Test",
+    max: 4 //4 readers
+};
+const writeConfigParamsDB2 = {
+    connectionString: "postgres://postgres:@localhost:5432/Infinity-2",
+    application_name: "e2e Test",
+    max: 2 //2 Writer
+};
+let resourceId = await infinityDatabase.registerResource(readConfigParamsDB1, writeConfigParamsDB1,maxTablesPerResource, maxRowsPerTable);
+console.log("Resource Id:" + resourceId);
+
+resourceId = await infinityDatabase.registerResource(readConfigParamsDB2, writeConfigParamsDB2, 1000, maxRowsPerTable);
+console.log("Resource Id:" + resourceId);
+```
+
+3. **Create Infinity Table**
+```javascript
+const TableDefinition = [{
     "name": "time",
     "datatype": "bigint",
-    "filterable": { "sorted": "desc" },
-    "primary": true,
-    "key": {
-        "range": 1000
-    }
+    "filterable": { "sorted": "desc" }
 },
 {
     "name": "tagid",
-    "datatype": "integer",
-    "primary": true
+    "datatype": "integer"
 },
 {
     "name": "value",
@@ -62,22 +90,52 @@ const tableSchema = [
     "datatype": "integer",
     "filterable": { "sorted": "asc" },
 }];
- const partitionManager = new targetType(_dbRConnection, _dbWConnection, schemaName, tableName,tableSchema);
 
-//Create the table definition in database.
-  await partitionManager.create();
+const boundlessTable = await infinityDatabase.createTable(TableDefinition);
+const tableId = boundlessTable.TableIdentifier;
+console.log("Table Created: " + tableId);
+```
+4. **Insert Data**
+```javascript
+let ctr = 200;
+let rows = [];
+while (ctr > 0) {
+    rows.push({ "time": ctr, "tagid": ctr, "value": ctr, "quality": ctr })
+    ctr--;
+}
 
-//Insert or Update data based on primary key.
-let insertpayload = [
-    [0, 1, 1.5, 1],
-    [999, 2, 2.5, 2],
-]
+console.time("Insertion");
+const result = await boundlessTable.bulkInsert(rows);
+console.timeEnd("Insertion");
+```
+5. **Search Data**
+```javascript
+const filter = {
+    "conditions": [
+        {
+            "name": "value",
+            "operator": "=",
+            "values": [
+                10
+            ]
+        },
+        {
+            "name": "quality",
+            "operator": "=",
+            "values": [
+                1
+            ]
+        }
+    ],
+    "combine": "$1:raw OR $2:raw"
+}
+const results = await boundlessTable.search(undefined, undefined, filter);
+console.log(results);
+```
 
-await partitionManager.upsert(insertpayload);
-
-//Read data by range.
-let result = await partitionManager.readRange(0, 998);
-
+6. **Load Existing Table**
+```javascript
+const boundlessTable = await infinityDatabase.loadTable(TypeId);
 ```
 
 ## Built with
