@@ -11,7 +11,29 @@ const InfinityStampTag = "InfStamp";
 const InfinityIdTag = "InfId";
 const PrimaryTag = "primary";
 let counter = 0;
-module.exports = class InfinityTableFactory {
+module.exports = async function (indexerRedisConnectionString, pgReadConfigParams, pgWriteConfigParams) {
+    configDBWriter = pgp(pgWriteConfigParams);
+    //TODO: Get an advisory lock here.
+    await configDBWriter.none(`CREATE TABLE IF NOT EXISTS public."Resources"
+    (
+        "Id" bigserial,
+        "Read" text NOT NULL,
+        "Write" text NOT NULL,
+        "MaxTables" integer NOT NULL,
+        "MaxRows" integer NOT NULL,
+        PRIMARY KEY ("Id")
+    );
+    
+    CREATE TABLE IF NOT EXISTS public."Types"
+    (
+        "Id" bigserial,
+        "Def" text[] NOT NULL,
+        PRIMARY KEY ("Id")
+    );`);
+    await configDBWriter.$pool.end();
+    return new InfinityTableFactory(indexerRedisConnectionString, pgReadConfigParams, pgWriteConfigParams);
+}
+class InfinityTableFactory {
     #pgReadConfigParams
     #pgWriteConfigParams
     #indexerRedisConnectionString
@@ -36,9 +58,11 @@ module.exports = class InfinityTableFactory {
 
         this.codeRed = () => {
             this.#redisClient.disconnect();
-            pgp.end();
+            this.#configDBWriter.$pool.end();
+            this.#configDBReader.$pool.end();
         };//Not be exposed for PROD
     }
+
 
     async registerResource(readerConnectionParams, writerConnectionParams, maxTables, maxRowsPerTable) {
         return await this.#configDBWriter.tx(async (trans) => {
@@ -191,7 +215,10 @@ class InfinityTable {
         //Not be exposed for PROD
         this.codeRed = () => {
             this.#redisClient.disconnect();
-            pgp.end();
+            this.#connectionMap.forEach((con, key) => {
+                con.$pool.end();
+                this.#connectionMap.delete(key);
+            });
         };
     }
 
@@ -517,7 +544,7 @@ class InfinityTable {
         //             ]
         //         }
         //     ],
-        //     "combine": "${0} AND ${1} OR ${2}"
+        //     "combine": "$1:raw OR $2:raw"
         // }
         let results = { "results": [], "pages": [] };
         let pageSql;

@@ -48,9 +48,8 @@ let TableWithUserId = [{
     "datatype": "integer",
     "filterable": { "sorted": "asc" },
 }];
-const infTableType = require('./index');
+const infinityTable = require('./index');
 
-const infTableFactory = new infTableType(defaultRedisConnectionString, readConfigParams, writeConfigParams)
 const readConfigParamsDB1 = {
     connectionString: "postgres://postgres:@localhost:5432/Infinity-1",
     application_name: "e2e Test",
@@ -73,19 +72,22 @@ const writeConfigParamsDB2 = {
 };
 let TypeId = 2;
 let boundlessTable;
+let infinityDatabase;
 let main = async () => {
+    infinityDatabase = await infinityTable(defaultRedisConnectionString, readConfigParams, writeConfigParams)
+
     if (TypeId == undefined) {
-        // let resourceId = await infTableFactory.registerResource(readConfigParamsDB1, writeConfigParamsDB1, 1000, 100);
+        // let resourceId = await infinityDatabase.registerResource(readConfigParamsDB1, writeConfigParamsDB1, 1000, 100);
         // console.log("Resource Id:" + resourceId);
-        // resourceId = await infTableFactory.registerResource(readConfigParamsDB2, writeConfigParamsDB2, 1000, 100);
+        // resourceId = await infinityDatabase.registerResource(readConfigParamsDB2, writeConfigParamsDB2, 1000, 100);
         // console.log("Resource Id:" + resourceId);
-        boundlessTable = await infTableFactory.createTable(TableWithoutUserId);
+        boundlessTable = await infinityDatabase.createTable(TableWithoutUserId);
         TypeId = boundlessTable.TableIdentifier;
         console.log("Type Created: " + TypeId);
         return;
     }
     else {
-        boundlessTable = await infTableFactory.loadTable(TypeId);
+        boundlessTable = await infinityDatabase.loadTable(TypeId);
     }
 
     // let ctr = 200;
@@ -107,7 +109,7 @@ let main = async () => {
     // else {
     //     console.log("Sucess:" + result.success.length);
     // }
-    let results ;
+    let results;
     // console.time("Retrive");
     // results = await boundlessTable.retrive(["2-1-997-1000"]);
     // console.timeEnd("Retrive");
@@ -171,11 +173,11 @@ let main = async () => {
     // console.timeEnd("PagedSearch");
     // console.log(results);
 
-    boundlessTable.codeRed();
+    await boundlessTable.codeRed();
 };
 
 main().then((r) => {
-    infTableFactory.codeRed();
+    infinityDatabase.codeRed();
 });
 
 

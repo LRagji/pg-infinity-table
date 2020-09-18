@@ -1,21 +1,23 @@
 # pg-infinity-table
 
 This package combines redis cache and multiple postgres database together to form a large table spanning across DBs, and provides with following features
-1. App level table partitioning without any specific pg implementation.
-2. Partition key can be any column but has to be monotonic integer.
-3. Efficient extraction of data.
+1. Row count partitioning.
+
+2. Search with inbuilt time ranges.
+3. Self Id generation or User provided Ids for primary key(user provided id limited to 20000000).
 4. Custom schema defination.
-5. Custom primary key.
 6. Custom indexes.
-7. Insert/Update in a single call.
+7. Normal CRUD operations.
 
 ## Getting Started
 
-1. Install using `npm -i partition-pg`
-2. Require in your project. `const targetType = require('partition-pg').PartionPg;`
-3. Run postgres on local docker if required. `docker run --name pg-12.4 -e POSTGRES_PASSWORD=mysecretpassword -e POSTGRES_DB=pgpartition -p 5432:5432 -d postgres:12.4-alpine`
-3. Instantiate with a postgres connection with readers and writers. 
-4. All done, Start using it!!.
+1. Install using `npm i pg-infinity-table`
+2. Require in your project. `const infinityType = require('pg-infinity-table');`
+3. Run postgres as local docker if required. `docker run --name pg-12.4 -e POSTGRES_PASSWORD=mysecretpassword -e POSTGRES_DB=pgpartition -p 5432:5432 -d postgres:12.4-alpine`
+4. Run redis as local docker if required. `docker run -p 6379:6379 -itd --rm redis:latest`
+5. Create 2 worker database for table across DB Eg: Infinity-1 & Infinity-2
+6. Instantiate with a postgres readers and writers and connections to redis. 
+7. All done, Start using it!!.
 
 ## Examples/Code snippets
 
@@ -82,7 +84,8 @@ let result = await partitionManager.readRange(0, 998);
 
 1. Authors love for Open Source.
 2. [pg-promise](https://www.npmjs.com/package/pg-promise).
-3. [ts-map](https://www.npmjs.com/package/ts-map?activeTab=readme).
+3. [ioredis](https://www.npmjs.com/package/ioredis).
+4. [redis-scripto](https://www.npmjs.com/package/redis-scripto).
 
 ## Contributions
 
