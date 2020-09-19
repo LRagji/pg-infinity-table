@@ -93,21 +93,24 @@ let main = async () => {
     else {
         boundlessTable = await infinityDatabase.loadTable(TypeId);
     }
-    let offset = 1700000;
-    let ctr = offset + 50000;
-    let payload = [];
-    console.time("Payload Generation");
-    while (ctr > offset) {
-        payload.push({ "time": ctr, "tagid": getRandomInt(100, 100), "value": getRandomInt(1, 10000), "quality": getRandomInt(ctr, ctr + 1000), "sometext": makeString(100) })
-        ctr--;
-    }
-    console.timeEnd("Payload Generation");
+    // let lctr = 100
+    // while (lctr < 101) {
+    //     let offset = lctr * 100000;
+    //     let ctr = offset + 100000;
+    //     let payload = [];
+    //     console.time("Payload Generation");
+    //     while (ctr > offset) {
+    //         payload.push({ "time": ctr, "tagid": getRandomInt(100, 100), "value": getRandomInt(1, 10000), "quality": getRandomInt(ctr, ctr + 1000), "sometext": makeString(100) })
+    //         ctr--;
+    //     }
+    //     console.timeEnd("Payload Generation");
 
-    console.time("Insertion");
-    let result = await boundlessTable.bulkInsert(payload);
-    console.timeEnd("Insertion");
-    console.log(result);
-
+    //     console.time("Insertion");
+    //     let result = await boundlessTable.bulkInsert(payload);
+    //     console.timeEnd("Insertion");
+    //     console.log(result);
+    //     lctr++;
+    // }
     // if (result.failures.length > 0) {
     //     console.error("Failed:" + result.failures[0]);
     // }
@@ -116,33 +119,42 @@ let main = async () => {
     // }
     let results;
     // console.time("Retrive");
-    // results = await boundlessTable.retrive(["2-1-997-1000"]);
+    // results = await boundlessTable.retrive([83928n]);
     // console.timeEnd("Retrive");
     // console.log(results);
 
-    // console.time("CompleteTypeSearch");
-    // let filter = {
-    //     "conditions": [
-    //         {
-    //             "name": "value",
-    //             "operator": "=",
-    //             "values": [
-    //                 10
-    //             ]
-    //         },
-    //         {
-    //             "name": "quality",
-    //             "operator": "=",
-    //             "values": [
-    //                 1
-    //             ]
-    //         }
-    //     ],
-    //     "combine": "$1:raw OR $2:raw"
-    // }
-    // results = await boundlessTable.search(undefined, undefined, filter);
-    // console.timeEnd("CompleteTypeSearch");
-    // console.log(results);
+    console.time("CompleteTypeSearch");
+    let filter = {
+        "conditions": [
+            {
+                "name": "value",
+                "operator": "=",
+                "values": [
+                    568
+                ]
+            },
+            {
+                "name": "quality",
+                "operator": "=",
+                "values": [
+                    0
+                ]
+            },
+            {
+                "name": "sometext",
+                "operator": "=",
+                "values": [
+                    'kfldkdl'
+                ]
+            }
+
+        ],
+        "combine": "$1:raw OR $2:raw"
+    }
+    results = await boundlessTable.search(undefined, undefined, filter);
+    console.timeEnd("CompleteTypeSearch");
+    console.log(results.pages);
+    //console.table(results.results);
 
     // console.time("RangeTypeSearch");
     // filter = {
@@ -177,12 +189,10 @@ let main = async () => {
     // results = await boundlessTable.search(undefined, undefined, undefined, ["2-1-995"]);
     // console.timeEnd("PagedSearch");
     // console.log(results);
-
-    await boundlessTable.codeRed();
 };
 
 main().then((r) => {
-    infinityDatabase.codeRed();
+    console.log("Done");
 });
 
 function makeString(length) {

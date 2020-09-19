@@ -33,39 +33,35 @@ module.exports = async function (indexerRedisConnectionString, pgReadConfigParam
     );`);
     await configDBWriter.$pool.end();
     console.log("Killed2");
-    return new InfinityTableFactory(indexerRedisConnectionString, pgReadConfigParams, pgWriteConfigParams);
+    return new InfinityDatabase(indexerRedisConnectionString, pgReadConfigParams, pgWriteConfigParams);
 }
-class InfinityTableFactory {
-    #pgReadConfigParams
-    #pgWriteConfigParams
-    #indexerRedisConnectionString
+class InfinityDatabase {
     #redisClient
     #scriptingEngine
     #configDBWriter
     #configDBReader
 
+    static connectionMap = new Map();
+    static checkForSimilarConnection(aConfigParams, bConfigParams, aConnection) {
+        if (aConfigParams === bConfigParams) {
+            return aConnection;
+        }
+        else {
+            return pgp(bConfigParams);
+        }
+    }
+
     constructor(indexerRedisConnectionString, pgReadConfigParams, pgWriteConfigParams) {
-        this.#pgReadConfigParams = pgReadConfigParams;
-        this.#pgWriteConfigParams = pgWriteConfigParams;
-        this.#indexerRedisConnectionString = indexerRedisConnectionString;
         this.#redisClient = new redisType(indexerRedisConnectionString);
         this.#scriptingEngine = new scripto(this.#redisClient);
         this.#scriptingEngine.loadFromDir(path.resolve(path.dirname(__filename), 'lua'));
         this.#configDBWriter = pgp(pgWriteConfigParams);
-        this.#configDBReader = pgp(pgReadConfigParams);
+        this.#configDBReader = InfinityDatabase.checkForSimilarConnection(pgWriteConfigParams, pgReadConfigParams, pgReadConfigParams);
 
         this.registerResource = this.registerResource.bind(this);
         this.createTable = this.createTable.bind(this);
         this.loadTable = this.loadTable.bind(this);
-
-        this.codeRed = async () => {
-            this.#redisClient.disconnect();
-            await this.#configDBWriter.$pool.end();
-            await this.#configDBReader.$pool.end();
-            console.log("Killed3");
-        };//Not be exposed for PROD
     }
-
 
     async registerResource(readerConnectionParams, writerConnectionParams, maxTables, maxRowsPerTable) {
         return this.#configDBWriter.tx(async (trans) => {
@@ -105,7 +101,6 @@ class InfinityTableFactory {
         if (totalPrimaryColumns > 1) throw new Error("Table cannot have multiple primary columns");
         if (totalPrimaryColumns === 0) tableDefinition.unshift(infinityIdColumn);
         if (totalPrimaryColumns === 1) {
-            console.warn("It is recommended to use system generated infinity id for better scalling and performance.");
             userDefinedPK = true;
             userDefinedPKDatatype = tableDefinition.find(e => e.tag === PrimaryTag)["datatype"];
         }
@@ -143,7 +138,7 @@ class InfinityTableFactory {
             return tIdentifier.Id;
         });
 
-        return new InfinityTable(this.#pgReadConfigParams, this.#pgWriteConfigParams, this.#indexerRedisConnectionString, tableId, tableDefinition);
+        return new InfinityTable(this.#configDBReader, this.#configDBWriter, this.#scriptingEngine, tableId, tableDefinition);
     }
 
     async loadTable(TableIdentifier) {
@@ -152,7 +147,7 @@ class InfinityTableFactory {
             throw new Error(`Table with id does ${TableIdentifier} not exists.`);
         }
         tableDef = tableDef.Def.map(e => JSON.parse(e));
-        return new InfinityTable(this.#pgReadConfigParams, this.#pgWriteConfigParams, this.#indexerRedisConnectionString, TableIdentifier, tableDef);
+        return new InfinityTable(this.#configDBReader, this.#configDBWriter, this.#scriptingEngine, TableIdentifier, tableDef);
     }
 }
 
@@ -160,23 +155,18 @@ class InfinityTable {
     #configDBReader
     #configDBWriter
     #def
-    #connectionMap
-    #redisClient
     #scriptingEngine
     #columnsNames
     #userDefinedPk = false;
     #primaryColumn
     TableIdentifier = -1;
 
-    constructor(configReaderConnectionParams, configWriterConnectionParams, indexerRedisConnectionString, systemTableIdentifier, tableDefinition) {
-        this.#configDBReader = pgp(configReaderConnectionParams);
-        this.#configDBWriter = pgp(configWriterConnectionParams);
+    constructor(configReader, configWriter, redisScriptEngine, systemTableIdentifier, tableDefinition) {
+        this.#configDBReader = configReader
+        this.#configDBWriter = configWriter
         this.TableIdentifier = systemTableIdentifier;
         this.#def = tableDefinition;
-        this.#connectionMap = new Map();
-        this.#redisClient = new redisType(indexerRedisConnectionString);
-        this.#scriptingEngine = new scripto(this.#redisClient);
-        this.#scriptingEngine.loadFromDir(path.resolve(path.dirname(__filename), 'lua'));
+        this.#scriptingEngine = redisScriptEngine;
 
         this.datatypes = new Map();
         this.datatypes.set("bigint", "bigint");
@@ -204,31 +194,24 @@ class InfinityTable {
         this.#idParser = this.#idParser;
 
         this.bulkInsert = this.bulkInsert.bind(this);
+        this.retrive = this.retrive.bind(this);
+        this.search = this.search.bind(this);
+        this.bulkUpdate = this.bulkUpdate.bind(this);
+        this.bulkDelete = this.bulkDelete.bind(this);
+        this.alter = this.alter.bind(this);
+        this.drop = this.drop.bind(this);
 
         this.#def.forEach(columnDef => {
             if (columnDef.tag === PrimaryTag) {
                 this.#userDefinedPk = true;
                 this.#primaryColumn = columnDef;
+                console.warn(`Table(${systemTableIdentifier}):It is recommended to use system generated infinity id for better scale and performance.`);
             }
             else if (columnDef.tag === InfinityIdTag) {
                 this.#primaryColumn = columnDef;
             }
         });
 
-        //Not be exposed for PROD
-        this.codeRed = async () => {
-            this.#redisClient.disconnect();
-            let keys = Array.from(this.#connectionMap.keys());
-            for (let index = 0; index < keys.length; index++) {
-                const key = keys[index];
-                const con = this.#connectionMap.get(key);
-                this.#connectionMap.delete(key);
-                await con.W.$pool.end();
-                await con.R.$pool.end();
-                console.log("Killed1:" + key);
-            }
-            //pgp.end();
-        };
     }
 
     #generateIdentity = (range) => {
@@ -352,7 +335,7 @@ class InfinityTable {
 
     async bulkInsert(payload) {
         //This code has run away complexity dont trip on it ;)
-        //if (payload.length > 10000) throw new Error("Currently ingestion rate of 10K/sec is only supported!");
+        if (payload.length > 10000) throw new Error("Currently ingestion rate of 10K/sec is only supported!");
 
         console.time("Identity");
         let identities = await this.#generateIdentity(payload.length);
@@ -419,25 +402,29 @@ class InfinityTable {
             for (let tableIdx = 0; tableIdx < tableIds.length; tableIdx++) {
                 const tableId = tableIds[tableIdx];
                 const items = tables.get(tableId);
+                let insertedRows;
                 try {
                     const tableName = await this.#teraformTableSpace(dbId, tableId);
                     const DBWritter = await this.#retriveConnectionForDB(dbId, 'W');
-                    const insertedRows = await DBWritter.tx(async instanceTrans => {
-                        //TODO: Validate with redis as wwell
-                        await this.#configDBWriter.tx(async indexTran => {
-                            if (this.#userDefinedPk) {
-                                let sql = this.#indexPrimarykey((this.TableIdentifier + "-PK"), items);
-                                await indexTran.none(sql);
-                            }
-                            let sql = this.#indexInfinityStampMin((this.TableIdentifier + "-Min"), items, tableName);
+
+                    insertedRows = await this.#configDBWriter.tx(async indexTran => {
+                        //TODO: Validate if this MIN MAX index is stored in redis then what is the read performance.
+                        if (this.#userDefinedPk) {
+                            let sql = this.#indexPrimarykey((this.TableIdentifier + "-PK"), items);
+                            await indexTran.none(sql);
+                        }
+                        return await DBWritter.tx(async instanceTrans => {
+                            let sql = this.#sqlTransform(tableName, items);
+                            const instanceResults = await instanceTrans.any(sql);
+                            sql = this.#indexInfinityStampMin((this.TableIdentifier + "-Min"), items, tableName);
                             await indexTran.none(sql);
                             sql = this.#indexInfinityStampMax((this.TableIdentifier + "-Max"), items, tableName);
                             await indexTran.none(sql);
-                        });
 
-                        let sql = this.#sqlTransform(tableName, items);
-                        return instanceTrans.any(sql);
+                            return instanceResults;
+                        });
                     });
+
                     results.success.push(insertedRows.map(e => {
                         e.InfId = tableName + "-" + e.InfId;
                         return e;
@@ -446,7 +433,7 @@ class InfinityTable {
                 catch (err) {
                     results.failures.push({ "Error": err, "Items": items });
                     continue;
-                    //TODO: Reclaim Lost Ids
+                    //TODO: Reclaim Lost Ids from Redis
                 }
             }
         }
@@ -469,13 +456,13 @@ class InfinityTable {
     }
 
     #retriveConnectionForDB = async (databaseId, readerWriter = 'R') => {
-        if (this.#connectionMap.has(databaseId) == false) {
+        if (InfinityDatabase.connectionMap.has(databaseId) == false) {
             let conDetails = await this.#configDBReader.one('SELECT "Read","Write" FROM "Resources" WHERE "Id"=$1', [databaseId]);
             let tableDBWriter = pgp(JSON.parse(conDetails["Write"]));
-            let tableDBReader = pgp(JSON.parse(conDetails["Read"]));
-            this.#connectionMap.set(databaseId, { "W": tableDBWriter, "R": tableDBReader });
+            let tableDBReader = InfinityDatabase.checkForSimilarConnection(JSON.parse(conDetails["Write"]), JSON.parse(conDetails["Read"]), tableDBWriter);
+            InfinityDatabase.connectionMap.set(databaseId, { "W": tableDBWriter, "R": tableDBReader });
         }
-        return this.#connectionMap.get(databaseId)[readerWriter];
+        return InfinityDatabase.connectionMap.get(databaseId)[readerWriter];
     }
 
     async retrive(ids) {
@@ -628,14 +615,33 @@ class InfinityTable {
     }
 
     bulkUpdate() {
-
+        throw new Error("Not implemented");
     }
 
     bulkDelete() {
+        throw new Error("Not implemented");
+    }
 
+    alter() {
+        throw new Error("Not implemented");
+    }
+
+    drop() {
+        throw new Error("Not implemented");
     }
 }
 
 //TODO:
 //Handle Empty data from sql when no data is returned for query
 //Handle No DB id existing for Get call No Table Existing for get call No row existing for get call
+//While Inserting Searching and Updating verify the datatype matches the table defination
+//Alter Table
+//Drop Table
+//Update Rows
+//Delete Rows
+//Connection string resolver
+//Single connection for same connection strings
+//Parsed Statemnts
+//Docs
+//Validation
+//Tests
