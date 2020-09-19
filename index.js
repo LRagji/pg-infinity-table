@@ -196,7 +196,7 @@ class InfinityTable {
         this.bulkInsert = this.bulkInsert.bind(this);
         this.retrive = this.retrive.bind(this);
         this.search = this.search.bind(this);
-        this.bulkUpdate = this.bulkUpdate.bind(this);
+        this.update = this.update.bind(this);
         this.bulkDelete = this.bulkDelete.bind(this);
         this.alter = this.alter.bind(this);
         this.drop = this.drop.bind(this);
@@ -614,8 +614,41 @@ class InfinityTable {
         return results;
     }
 
-    bulkUpdate() {
-        throw new Error("Not implemented");
+    update(id, updatedObject) {
+        let results = { "results": [], "failures": [] };
+        let columnName = InfinityIdTag;
+        let properties = Object.keys(updatedObject);
+        let disintegratedId;
+        if (this.#userDefinedPk) {
+            disintegratedId = await this.#configDBReader.any('SELECT "UserPK" AS "ActualId", split_part("CInfId",$3,1)::Int as "Type",split_part("CInfId",$3,2)::Int as "DBId",split_part("CInfId",$3,3)::Int as "TableNo", "UserPK" as "Row" FROM $1:name WHERE "UserPK" = $2', [(this.TableIdentifier + '-PK'), id, '-']);
+            columnName = this.#primaryColumn.name;
+        }
+        else {
+            let disintegratedId = this.#idParser(id);
+            if (disintegratedId.Type !== this.TableIdentifier) throw new Error("Incorrect Id:" + id + " doesnot belong to this table.");
+            disintegratedId.ActualId = id;
+        }
+
+        let sql = "";
+        for (let index = 0; index < properties.length; index++) {
+            const propertyName = properties[index];
+            if ((this.#userDefinedPk === true && propertyName === this.#primaryColumn.name) ||
+                (this.#userDefinedPk === false && (propertyName === InfinityStampTag || propertyName === InfinityIdTag))) {
+                throw new Error(`Cannot update property ${propertyName} as its a system field.`);
+            }
+            else {
+                //TODO:Data type matches table def validations.
+                sql += pgp.as.format("$1:name = $2,", [propertyName, updatedObject[propertyName]]);
+            }
+        }
+        sql = sql.slice(0, -1);
+        let tableName = this.#idConstruct(disintegratedId.DBId, disintegratedId.TableNo);
+        let rowId = this.#userDefinedPk ? id : disintegratedId.Row;
+        sql = pgp.as.format("UPDATE $1:name SET $2:raw WHERE $3:name = $4 RETURNING *;", [tableName, sql, columnName, id, rowId]);
+
+        const DBWriter = this.#retriveConnectionForDB(disintegratedId.DBId, 'W');
+
+        return DBWriter.any(sql);
     }
 
     bulkDelete() {
