@@ -47,6 +47,10 @@ let TableWithUserId = [{
     "name": "quality",
     "datatype": "integer",
     "filterable": { "sorted": "asc" },
+},
+{
+    "name": "sometext",
+    "datatype": "text"
 }];
 const infinityTable = require('./index');
 
@@ -70,18 +74,18 @@ const writeConfigParamsDB2 = {
     application_name: "e2e Test",
     max: 2 //2 Writer
 };
-let TypeId = 2;
+let TypeId = 1;
 let boundlessTable;
 let infinityDatabase;
 let main = async () => {
     infinityDatabase = await infinityTable(defaultRedisConnectionString, readConfigParams, writeConfigParams)
 
     if (TypeId == undefined) {
-        // let resourceId = await infinityDatabase.registerResource(readConfigParamsDB1, writeConfigParamsDB1, 1000, 100);
-        // console.log("Resource Id:" + resourceId);
-        // resourceId = await infinityDatabase.registerResource(readConfigParamsDB2, writeConfigParamsDB2, 1000, 100);
-        // console.log("Resource Id:" + resourceId);
-        boundlessTable = await infinityDatabase.createTable(TableWithoutUserId);
+        let resourceId = await infinityDatabase.registerResource(readConfigParamsDB1, writeConfigParamsDB1, 1000, 10000000);
+        console.log("Resource Id:" + resourceId);
+        resourceId = await infinityDatabase.registerResource(readConfigParamsDB2, writeConfigParamsDB2, 1000, 10000000);
+        console.log("Resource Id:" + resourceId);
+        boundlessTable = await infinityDatabase.createTable(TableWithUserId);
         TypeId = boundlessTable.TableIdentifier;
         console.log("Type Created: " + TypeId);
         return;
@@ -89,19 +93,20 @@ let main = async () => {
     else {
         boundlessTable = await infinityDatabase.loadTable(TypeId);
     }
+    let offset = 1700000;
+    let ctr = offset + 50000;
+    let payload = [];
+    console.time("Payload Generation");
+    while (ctr > offset) {
+        payload.push({ "time": ctr, "tagid": getRandomInt(100, 100), "value": getRandomInt(1, 10000), "quality": getRandomInt(ctr, ctr + 1000), "sometext": makeString(100) })
+        ctr--;
+    }
+    console.timeEnd("Payload Generation");
 
-    // let ctr = 200;
-    // let payload = [];
-    // console.time("Payload Generation");
-    // while (ctr > 0) {
-    //     payload.push({ "time": ctr, "tagid": ctr, "value": ctr, "quality": ctr })
-    //     ctr--;
-    // }
-    // console.timeEnd("Payload Generation");
-
-    // console.time("Insertion");
-    // let result = await boundlessTable.bulkInsert(payload);
-    // console.timeEnd("Insertion");
+    console.time("Insertion");
+    let result = await boundlessTable.bulkInsert(payload);
+    console.timeEnd("Insertion");
+    console.log(result);
 
     // if (result.failures.length > 0) {
     //     console.error("Failed:" + result.failures[0]);
@@ -180,7 +185,21 @@ main().then((r) => {
     infinityDatabase.codeRed();
 });
 
+function makeString(length) {
+    var result = '';
+    var characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    var charactersLength = characters.length;
+    for (var i = 0; i < length; i++) {
+        result += characters.charAt(Math.floor(Math.random() * charactersLength));
+    }
+    return result;
+}
 
+function getRandomInt(min, max) {
+    min = Math.ceil(min);
+    max = Math.floor(max);
+    return Math.floor(Math.random() * (max - min) + min); //The maximum is exclusive and the minimum is inclusive
+}
 // CREATE TABLE public."Resources"
 // (
 //     "Id" bigserial,

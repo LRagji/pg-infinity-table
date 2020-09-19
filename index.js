@@ -10,7 +10,7 @@ pgp.pg.types.setTypeParser(20, BigInt); // This is for serialization bug of BigI
 const InfinityStampTag = "InfStamp";
 const InfinityIdTag = "InfId";
 const PrimaryTag = "primary";
-let counter = 0;
+
 module.exports = async function (indexerRedisConnectionString, pgReadConfigParams, pgWriteConfigParams) {
     configDBWriter = pgp(pgWriteConfigParams);
     //TODO: Get an advisory lock here.
@@ -31,6 +31,7 @@ module.exports = async function (indexerRedisConnectionString, pgReadConfigParam
         PRIMARY KEY ("Id")
     );`);
     await configDBWriter.$pool.end();
+    console.log("Killed2");
     return new InfinityTableFactory(indexerRedisConnectionString, pgReadConfigParams, pgWriteConfigParams);
 }
 class InfinityTableFactory {
@@ -56,10 +57,11 @@ class InfinityTableFactory {
         this.createTable = this.createTable.bind(this);
         this.loadTable = this.loadTable.bind(this);
 
-        this.codeRed = () => {
+        this.codeRed = async () => {
             this.#redisClient.disconnect();
-            this.#configDBWriter.$pool.end();
-            this.#configDBReader.$pool.end();
+            await this.#configDBWriter.$pool.end();
+            await this.#configDBReader.$pool.end();
+            console.log("Killed3");
         };//Not be exposed for PROD
     }
 
@@ -213,12 +215,18 @@ class InfinityTable {
         });
 
         //Not be exposed for PROD
-        this.codeRed = () => {
+        this.codeRed = async () => {
             this.#redisClient.disconnect();
-            this.#connectionMap.forEach((con, key) => {
-                con.$pool.end();
+            let keys = Array.from(this.#connectionMap.keys());
+            for (let index = 0; index < keys.length; index++) {
+                const key = keys[index];
+                const con = this.#connectionMap.get(key);
                 this.#connectionMap.delete(key);
-            });
+                await con.W.$pool.end();
+                await con.R.$pool.end();
+                console.log("Killed1:" + key);
+            }
+            //pgp.end();
         };
     }
 
@@ -310,7 +318,11 @@ class InfinityTable {
 
     #sqlTransform = (tableName, payload) => {
 
-        let valuesString = payload.reduce((valuesString, element) => valuesString += `(${element.Values.join(",")}),`, "");
+        let valuesString = payload.reduce((valuesString, element) => {
+            let colValues = element.Values.reduce((acc, e) => acc + pgp.as.format("$1,", e), "");
+            colValues = colValues.slice(0, -1);
+            return valuesString + pgp.as.format("($1:raw),", colValues);
+        }, "");
         let columns = this.#columnsNames.reduce((acc, e) => acc + `${pgp.as.format('$1:alias', [e])},`, "");
         columns = columns.slice(0, -1);
         valuesString = valuesString.slice(0, -1)
@@ -340,7 +352,7 @@ class InfinityTable {
 
     async bulkInsert(payload) {
         //This code has run away complexity dont trip on it ;)
-        if (payload.length > 10000) throw new Error("Currently ingestion rate of 10K/sec is only supported!");
+        //if (payload.length > 10000) throw new Error("Currently ingestion rate of 10K/sec is only supported!");
 
         console.time("Identity");
         let identities = await this.#generateIdentity(payload.length);
@@ -360,9 +372,7 @@ class InfinityTable {
             let scopedRowId = lastChange[3];
             let completeRowId = `${this.TableIdentifier}-${dbId}-${tableId}-${scopedRowId}`;
             lastChange[3]++;
-            let item = { "InfinityRowId": completeRowId, "Values": [], "InfinityStamp": counter };
-            counter++;
-            //let item = { "InfinityRowId": completeRowId, "Values": [], "InfinityStamp": Date.now() };
+            let item = { "InfinityRowId": completeRowId, "Values": [], "InfinityStamp": Date.now() };
 
             this.#def.forEach(columnDef => {
                 let colValue = value[columnDef.name];
