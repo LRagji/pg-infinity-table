@@ -74,8 +74,7 @@ console.log("Resource Id:" + resourceId);
 ```javascript
 const TableDefinition = [{
     "name": "time",
-    "datatype": "bigint",
-    "filterable": { "sorted": "desc" }
+    "datatype": "bigint"
 },
 {
     "name": "tagid",
@@ -87,8 +86,7 @@ const TableDefinition = [{
 },
 {
     "name": "quality",
-    "datatype": "integer",
-    "filterable": { "sorted": "asc" },
+    "datatype": "integer"
 }];
 
 const boundlessTable = await infinityDatabase.createTable(TableDefinition);

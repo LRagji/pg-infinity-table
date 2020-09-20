@@ -28,7 +28,12 @@ let TableWithoutUserId = [{
     "name": "quality",
     "datatype": "integer",
     "filterable": { "sorted": "asc" },
-}];
+},
+{
+    "name": "sometext",
+    "datatype": "text"
+}
+];
 let TableWithUserId = [{
     "name": "time",
     "datatype": "bigint",
@@ -81,11 +86,11 @@ let main = async () => {
     infinityDatabase = await infinityTable(defaultRedisConnectionString, readConfigParams, writeConfigParams)
 
     if (TypeId == undefined) {
-        let resourceId = await infinityDatabase.registerResource(readConfigParamsDB1, writeConfigParamsDB1, 1000, 10000000);
-        console.log("Resource Id:" + resourceId);
-        resourceId = await infinityDatabase.registerResource(readConfigParamsDB2, writeConfigParamsDB2, 1000, 10000000);
-        console.log("Resource Id:" + resourceId);
-        boundlessTable = await infinityDatabase.createTable(TableWithUserId);
+        // let resourceId = await infinityDatabase.registerResource(readConfigParamsDB1, writeConfigParamsDB1, 1000, 10000000);
+        // console.log("Resource Id:" + resourceId);
+        // resourceId = await infinityDatabase.registerResource(readConfigParamsDB2, writeConfigParamsDB2, 1000, 10000000);
+        // console.log("Resource Id:" + resourceId);
+        boundlessTable = await infinityDatabase.createTable(TableWithoutUserId);
         TypeId = boundlessTable.TableIdentifier;
         console.log("Type Created: " + TypeId);
         return;
@@ -93,10 +98,15 @@ let main = async () => {
     else {
         boundlessTable = await infinityDatabase.loadTable(TypeId);
     }
-    // let lctr = 100
-    // while (lctr < 101) {
-    //     let offset = lctr * 100000;
-    //     let ctr = offset + 100000;
+
+
+    //INSERTS
+    // let lctr = 0
+    // const rowsPerIteration = 100000;
+    // const totalIterations = 100;
+    // while (lctr < totalIterations) {
+    //     let offset = lctr * rowsPerIteration;
+    //     let ctr = offset + rowsPerIteration;
     //     let payload = [];
     //     console.time("Payload Generation");
     //     while (ctr > offset) {
@@ -108,52 +118,56 @@ let main = async () => {
     //     console.time("Insertion");
     //     let result = await boundlessTable.bulkInsert(payload);
     //     console.timeEnd("Insertion");
-    //     console.log(result);
+
+    //     if (result.failures.length > 0) {
+    //         console.error("Failed:" + result.failures[0]);
+    //     }
+    //     else {
+    //         console.log("Sucess:" + result.success.length);
+    //     }
     //     lctr++;
     // }
-    // if (result.failures.length > 0) {
-    //     console.error("Failed:" + result.failures[0]);
-    // }
-    // else {
-    //     console.log("Sucess:" + result.success.length);
-    // }
-    let results;
+
+
+    //READS
+    // let results;
     // console.time("Retrive");
-    // results = await boundlessTable.retrive([83928n]);
+    // //results = await boundlessTable.retrive([1n]);
+    // results = await boundlessTable.retrive(["2-0-1-998-45"]);
     // console.timeEnd("Retrive");
     // console.log(results);
 
-    console.time("CompleteTypeSearch");
-    let filter = {
-        "conditions": [
-            {
-                "name": "value",
-                "operator": "=",
-                "values": [
-                    568
-                ]
-            },
-            {
-                "name": "quality",
-                "operator": "=",
-                "values": [
-                    0
-                ]
-            },
-            {
-                "name": "sometext",
-                "operator": "=",
-                "values": [
-                    'kfldkdl'
-                ]
-            }
+    // console.time("CompleteTypeSearch");
+    // let filter = {
+    //     "conditions": [
+    //         {
+    //             "name": "value",
+    //             "operator": "=",
+    //             "values": [
+    //                 568
+    //             ]
+    //         },
+    //         {
+    //             "name": "quality",
+    //             "operator": "=",
+    //             "values": [
+    //                 0
+    //             ]
+    //         },
+    //         {
+    //             "name": "sometext",
+    //             "operator": "=",
+    //             "values": [
+    //                 'kfldkdl'
+    //             ]
+    //         }
 
-        ],
-        "combine": "$1:raw OR $2:raw"
-    }
-    results = await boundlessTable.search(undefined, undefined, filter);
-    console.timeEnd("CompleteTypeSearch");
-    console.log(results.pages);
+    //     ],
+    //     "combine": "$1:raw OR $2:raw OR $3:raw"
+    // }
+    // results = await boundlessTable.search(undefined, undefined, filter);
+    // console.timeEnd("CompleteTypeSearch");
+    // console.log(results.pages);
     //console.table(results.results);
 
     // console.time("RangeTypeSearch");
@@ -188,6 +202,11 @@ let main = async () => {
     // console.time("PagedSearch");
     // results = await boundlessTable.search(undefined, undefined, undefined, ["2-1-995"]);
     // console.timeEnd("PagedSearch");
+    // console.log(results);
+
+    //UPDATES
+    // //let results = await boundlessTable.update("2-0-1-998-40", { "value": getRandomInt(1, 10000) });
+    // let results = await boundlessTable.update("49", { "value": getRandomInt(1, 10000) });
     // console.log(results);
 };
 

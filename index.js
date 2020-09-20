@@ -11,6 +11,7 @@ pgp.pg.types.setTypeParser(20, BigInt); // This is for serialization bug of BigI
 const InfinityStampTag = "InfStamp";
 const InfinityIdTag = "InfId";
 const PrimaryTag = "primary";
+const TableVersionDefault = 0;
 
 module.exports = async function (indexerRedisConnectionString, pgReadConfigParams, pgWriteConfigParams) {
     configDBWriter = pgp(pgWriteConfigParams);
@@ -29,10 +30,10 @@ module.exports = async function (indexerRedisConnectionString, pgReadConfigParam
     (
         "Id" bigserial,
         "Def" text[] NOT NULL,
-        PRIMARY KEY ("Id")
+        "Version" integer NOT NULL,
+        PRIMARY KEY ("Id","Version")
     );`);
     await configDBWriter.$pool.end();
-    console.log("Killed2");
     return new InfinityDatabase(indexerRedisConnectionString, pgReadConfigParams, pgWriteConfigParams);
 }
 class InfinityDatabase {
@@ -114,7 +115,7 @@ class InfinityDatabase {
 
         const tableId = await this.#configDBWriter.tx(async trans => {
 
-            let tIdentifier = await trans.one('INSERT INTO "Types" ("Def") values ($1) RETURNING "Id";', [tableDefinition]);
+            let tIdentifier = await trans.one('INSERT INTO "Types" ("Def","Version") values ($1,$2) RETURNING "Id";', [tableDefinition, TableVersionDefault]);
             if (userDefinedPK) {
                 await trans.none(`CREATE TABLE public."${tIdentifier.Id}-PK"
                 (
@@ -138,16 +139,17 @@ class InfinityDatabase {
             return tIdentifier.Id;
         });
 
-        return new InfinityTable(this.#configDBReader, this.#configDBWriter, this.#scriptingEngine, tableId, tableDefinition);
+        return new InfinityTable(this.#configDBReader, this.#configDBWriter, this.#scriptingEngine, tableId, tableDefinition, TableVersionDefault);
     }
 
     async loadTable(TableIdentifier) {
-        let tableDef = await this.#configDBReader.one('SELECT "Def" FROM "Types" WHERE "Id"=$1', [TableIdentifier]);
+        let tableDef = await this.#configDBReader.one('SELECT "Def","Version" FROM "Types" WHERE "Id"=$1 AND "Version" = (SELECT MAX("Version") FROM "Types" WHERE "Id"=$1 );', [TableIdentifier]);
         if (tableDef == undefined) {
             throw new Error(`Table with id does ${TableIdentifier} not exists.`);
         }
+        let version = tableDef.Version;
         tableDef = tableDef.Def.map(e => JSON.parse(e));
-        return new InfinityTable(this.#configDBReader, this.#configDBWriter, this.#scriptingEngine, TableIdentifier, tableDef);
+        return new InfinityTable(this.#configDBReader, this.#configDBWriter, this.#scriptingEngine, TableIdentifier, tableDef, version);
     }
 }
 
@@ -160,11 +162,13 @@ class InfinityTable {
     #userDefinedPk = false;
     #primaryColumn
     TableIdentifier = -1;
+    TableVersion = -1;
 
-    constructor(configReader, configWriter, redisScriptEngine, systemTableIdentifier, tableDefinition) {
+    constructor(configReader, configWriter, redisScriptEngine, systemTableIdentifier, tableDefinition, tableVersion) {
         this.#configDBReader = configReader
         this.#configDBWriter = configWriter
         this.TableIdentifier = systemTableIdentifier;
+        this.TableVersion = tableVersion
         this.#def = tableDefinition;
         this.#scriptingEngine = redisScriptEngine;
 
@@ -197,8 +201,8 @@ class InfinityTable {
         this.retrive = this.retrive.bind(this);
         this.search = this.search.bind(this);
         this.update = this.update.bind(this);
-        this.bulkDelete = this.bulkDelete.bind(this);
-        this.alter = this.alter.bind(this);
+        this.delete = this.delete.bind(this);
+        this.mutate = this.mutate.bind(this);
         this.drop = this.drop.bind(this);
 
         this.#def.forEach(columnDef => {
@@ -288,15 +292,15 @@ class InfinityTable {
         EXECUTE dsql USING table_name;
         END$$;`;
         await currentWriterConnection.none(pgp.as.format(functionSql, {
-            "function_name": ("infinity_part_" + this.TableIdentifier),
-            "table_name": this.TableIdentifier + "-" + databaseId,
+            "function_name": ("infinity_part_" + this.TableIdentifier + "-" + this.TableVersion),
+            "table_name": this.TableIdentifier + '-' + this.TableVersion + "-" + databaseId,
             "columns": tableColumns,
             "primaryKeyColumns": primaryKeyColumns,
             "indexColumns": indexColumns
         }));
 
-        await currentWriterConnection.one(`SELECT "infinity_part_${this.TableIdentifier}"('${tableId}')`);
-        return `${this.TableIdentifier}-${databaseId}-${tableId}`;
+        await currentWriterConnection.one(`SELECT "infinity_part_${this.TableIdentifier}-${this.TableVersion}"('${tableId}')`);
+        return `${this.TableIdentifier}-${this.TableVersion}-${databaseId}-${tableId}`;
     }
 
     #sqlTransform = (tableName, payload) => {
@@ -335,7 +339,7 @@ class InfinityTable {
 
     async bulkInsert(payload) {
         //This code has run away complexity dont trip on it ;)
-        if (payload.length > 10000) throw new Error("Currently ingestion rate of 10K/sec is only supported!");
+        //if (payload.length > 10000) throw new Error("Currently ingestion rate of 10K/sec is only supported!");
 
         console.time("Identity");
         let identities = await this.#generateIdentity(payload.length);
@@ -353,7 +357,7 @@ class InfinityTable {
             let dbId = lastChange[1];
             let tableId = lastChange[2];
             let scopedRowId = lastChange[3];
-            let completeRowId = `${this.TableIdentifier}-${dbId}-${tableId}-${scopedRowId}`;
+            let completeRowId = `${this.TableIdentifier}-${this.TableVersion}-${dbId}-${tableId}-${scopedRowId}`;
             lastChange[3]++;
             let item = { "InfinityRowId": completeRowId, "Values": [], "InfinityStamp": Date.now() };
 
@@ -445,14 +449,15 @@ class InfinityTable {
         let parts = completeInfId.split("-");
         return {
             "Type": parseInt(parts[0]),
-            "DBId": parseInt(parts[1]),
-            "TableNo": parseInt(parts[2]),
-            "Row": parseInt(parts[3])
+            "Version": parseInt(parts[1]),
+            "DBId": parseInt(parts[2]),
+            "TableNo": parseInt(parts[3]),
+            "Row": parseInt(parts[4])
         }
     }
 
-    #idConstruct = (databaseId, tableNumber, rowNumber) => {
-        return `${this.TableIdentifier}-${databaseId}-${tableNumber}${rowNumber != undefined ? ('-' + rowNumber) : ''}`;
+    #idConstruct = (version, databaseId, tableNumber, rowNumber) => {
+        return `${this.TableIdentifier}-${version}-${databaseId}-${tableNumber}${rowNumber != undefined ? ('-' + rowNumber) : ''}`;
     }
 
     #retriveConnectionForDB = async (databaseId, readerWriter = 'R') => {
@@ -466,11 +471,11 @@ class InfinityTable {
     }
 
     async retrive(ids) {
-        let results = { "results": [], "page": [] };
+        let results = { "results": [], "page": [], "errors": [] };
         let disintegratedIds;
 
         if (this.#userDefinedPk) {
-            disintegratedIds = await this.#configDBReader.any('SELECT "UserPK" AS "ActualId", split_part("CInfId",$3,1)::Int as "Type",split_part("CInfId",$3,2)::Int as "DBId",split_part("CInfId",$3,3)::Int as "TableNo", "UserPK" as "Row" FROM $1:name WHERE "UserPK" = ANY ($2)', [(this.TableIdentifier + '-PK'), ids, '-']);
+            disintegratedIds = await this.#configDBReader.any('SELECT "UserPK" AS "ActualId", split_part("CInfId",$3,1)::Int as "Type",split_part("CInfId",$3,2)::Int as "Version",split_part("CInfId",$3,3)::Int as "DBId",split_part("CInfId",$3,4)::Int as "TableNo", "UserPK" as "Row" FROM $1:name WHERE "UserPK" = ANY ($2)', [(this.TableIdentifier + '-PK'), ids, '-']);
         }
         else {
             disintegratedIds = ids.map((id) => {
@@ -481,51 +486,56 @@ class InfinityTable {
             });
         }
 
-        let groupedIds = disintegratedIds.reduce((acc, e) => {
-            if (acc.has(e.DBId)) {
-                let tablesMap = acc.get(e.DBId);
-                if (tablesMap.has(e.TableNo)) {
-                    tablesMap.get(e.TableNo).push({ "Row": e.Row, "ActualId": e.ActualId });
-                }
-                else {
-                    tablesMap.set(e.TableNo, [{ "Row": e.Row, "ActualId": e.ActualId }]);
+        let groupedIds = disintegratedIds.reduce((acc, e, idx, allIds) => {
+            let groupedIds = acc.groupedIds;
+            let maximumKey = acc.maximumKey;
+            let maxCount = acc.maxCount;
+            let groupKey = `${e.Version}-${e.DBId}-${e.TableNo}`;
+
+            if (groupedIds.has(groupKey)) {
+                let ids = groupedIds.get(groupKey);
+                ids.push(e);
+                if (maxCount < ids.length) {
+                    maxCount = ids.length;
+                    maximumKey = groupKey;
                 }
             }
             else {
-                let tableMap = new Map();
-                tableMap.set(e.TableNo, [{ "Row": e.Row, "ActualId": e.ActualId }]);
-                acc.set(e.DBId, tableMap);
-            }
-            return acc;
-        }, new Map());
-
-        let DBIds = Array.from(groupedIds.keys())
-        for (let dbIdx = 0; dbIdx < DBIds.length; dbIdx++) {
-            const dbId = DBIds[dbIdx];
-            const tables = groupedIds.get(dbId);
-            const tableIds = Array.from(tables.keys());
-            for (let tableIdx = 0; tableIdx < tableIds.length; tableIdx++) {
-                const DBReader = await this.#retriveConnectionForDB(dbId);
-                const currentTable = tableIds[tableIdx];
-                const currentTableIds = tables.get(currentTable);
-                const onlyIds = currentTableIds.map(e => e.Row);
-                //TODO There is a case where table doesnt exists as the DB/Table went rouge/missing.
-                let data = await DBReader.any("SELECT * FROM $1:name WHERE $2:name = ANY ($3)", [this.#idConstruct(dbId, currentTable), this.#primaryColumn.name, onlyIds]);
-                for (let index = 0; index < data.length; index++) {
-                    const acquiredObject = data[index];
-                    let acquiredId = acquiredObject[this.#primaryColumn.name];
-                    if (this.#userDefinedPk === false) {
-                        acquiredId = this.#idConstruct(dbId, currentTable, acquiredId);
-                        acquiredObject[InfinityIdTag] = acquiredId;
-                    }
-                    let spliceIdx = ids.indexOf(acquiredId);
-                    if (spliceIdx === -1) throw new Error("Database returned extra id:" + acquiredId);
-                    ids.splice(spliceIdx, 1);
+                groupedIds.set(groupKey, [e]);
+                if (maxCount < 1) {
+                    maxCount = 1;
+                    maximumKey = groupKey;
                 }
-                results.results = data;
-                results.page = ids;
-                return results;
             }
+
+            if (idx == allIds.length - 1) {
+                return groupedIds.get(maximumKey);
+            }
+            return { "groupedIds": groupedIds, "maxCount": maxCount, "maximumKey": maximumKey };
+        }, { "groupedIds": new Map(), "maxCount": Number.MIN_SAFE_INTEGER, "maximumKey": "" });
+
+        if (disintegratedIds.length > 0) {
+            const tableName = this.#idConstruct(groupedIds[0].Version, groupedIds[0].DBId, groupedIds[0].TableNo);
+            const rowIds = groupedIds.map(e => e.Row);
+            const DBReader = await this.#retriveConnectionForDB(groupedIds[0].DBId);
+            let data = await DBReader.any("SELECT * FROM $1:name WHERE $2:name = ANY ($3)", [tableName, this.#primaryColumn.name, rowIds]);
+
+            for (let index = 0; index < data.length; index++) {
+                const acquiredObject = data[index];
+                let acquiredId = acquiredObject[this.#primaryColumn.name];
+                if (this.#userDefinedPk === false) {
+                    acquiredId = this.#idConstruct(groupedIds[0].Version, groupedIds[0].DBId, groupedIds[0].TableNo, acquiredId);
+                    acquiredObject[InfinityIdTag] = acquiredId;
+                }
+                let spliceIdx = ids.indexOf(acquiredId);
+                if (spliceIdx === -1) throw new Error("Database returned extra id:" + acquiredId);
+                ids.splice(spliceIdx, 1);
+            }
+            results.results = data;
+            results.page = ids;
+        }
+        else {
+            results.errors.push(new Error("Ids were not found, " + ids.join(',')));
         }
         return results;
     }
@@ -546,31 +556,34 @@ class InfinityTable {
         let results = { "results": [], "pages": [] };
         let pageSql;
         if (pages == undefined || pages.length === 0) {
-            if (start != undefined && end != undefined) {
+            if (start != undefined && end != undefined) {//Fresh Range Search
                 pageSql = pgp.as.format(`SELECT "Min"."InfStamp" as "Start", "Max"."InfStamp" as "End",
                 split_part("Max"."PInfId",$1,1)::Int as "Type",
-                split_part("Max"."PInfId",$1,2)::Int as "DBId",
-                split_part("Max"."PInfId",$1,3)::Int as "TableNo",
+                split_part("Max"."PInfId",$1,2)::Int as "Version",
+                split_part("Max"."PInfId",$1,3)::Int as "DBId",
+                split_part("Max"."PInfId",$1,4)::Int as "TableNo",
                 "Max"."PInfId" as "Page"
                 FROM $4:name as "Max" JOIN $5:name as "Min" ON "Max"."PInfId"="Min"."PInfId"
                 WHERE $2 < "Max"."InfStamp" AND  $3 > "Min"."InfStamp"
                 ORDER BY "Min"."InfStamp"`, ['-', start, end, (this.TableIdentifier + "-Max"), (this.TableIdentifier + "-Min")]);
             }
-            else {
+            else {// Fresh Full DB Search 
                 pageSql = pgp.as.format(`SELECT "Min"."InfStamp" as "Start", "Max"."InfStamp" as "End",
                 split_part("Max"."PInfId",$1,1)::Int as "Type",
-                split_part("Max"."PInfId",$1,2)::Int as "DBId",
-                split_part("Max"."PInfId",$1,3)::Int as "TableNo",
+                split_part("Max"."PInfId",$1,2)::Int as "Version",
+                split_part("Max"."PInfId",$1,3)::Int as "DBId",
+                split_part("Max"."PInfId",$1,4)::Int as "TableNo",
                 "Max"."PInfId" as "Page"
-                FROM $4:name as "Max" JOIN $5:name as "Min" ON "Max"."PInfId"="Min"."PInfId"
-                ORDER BY "Min"."InfStamp"`, ['-', start, end, (this.TableIdentifier + "-Max"), (this.TableIdentifier + "-Min")]);
+                FROM $2:name as "Max" JOIN $3:name as "Min" ON "Max"."PInfId"="Min"."PInfId"
+                ORDER BY "Min"."InfStamp"`, ['-', (this.TableIdentifier + "-Max"), (this.TableIdentifier + "-Min")]);
             }
         }
         else {
             pageSql = pgp.as.format(`SELECT "Min"."InfStamp" as "Start", "Max"."InfStamp" as "End",
             split_part("Max"."PInfId",$1,1)::Int as "Type",
-            split_part("Max"."PInfId",$1,2)::Int as "DBId",
-            split_part("Max"."PInfId",$1,3)::Int as "TableNo",
+            split_part("Max"."PInfId",$1,2)::Int as "Version",
+            split_part("Max"."PInfId",$1,3)::Int as "DBId",
+            split_part("Max"."PInfId",$1,4)::Int as "TableNo",
             "Max"."PInfId" as "Page"
             FROM $2:name as "Max" JOIN $3:name as "Min" ON "Max"."PInfId"="Min"."PInfId"
             WHERE "Max"."PInfId" = ANY ($4)
@@ -596,16 +609,16 @@ class InfinityTable {
             }
             let searchQuery;
             if (where == undefined || where === "") {
-                searchQuery = pgp.as.format("SELECT * FROM $1:name", [this.#idConstruct(searchPage.DBId, searchPage.TableNo)])
+                searchQuery = pgp.as.format("SELECT * FROM $1:name", [this.#idConstruct(searchPage.Version, searchPage.DBId, searchPage.TableNo)])
             }
             else {
-                searchQuery = pgp.as.format("SELECT * FROM $1:name WHERE $2:raw", [this.#idConstruct(searchPage.DBId, searchPage.TableNo), where]);
+                searchQuery = pgp.as.format("SELECT * FROM $1:name WHERE $2:raw", [this.#idConstruct(searchPage.Version, searchPage.DBId, searchPage.TableNo), where]);
             }
             const DBReader = await this.#retriveConnectionForDB(searchPage.DBId);
             results.results = await DBReader.any(searchQuery);
             if (this.#userDefinedPk) {
                 results.results = results.results.map(e => {
-                    e[InfinityIdTag] = this.#idConstruct(searchPage.DBId, searchPage.TableNo, e[InfinityIdTag]);
+                    e[InfinityIdTag] = this.#idConstruct(searchPage.Version, searchPage.DBId, searchPage.TableNo, e[InfinityIdTag]);
                     return e;
                 });
             }
@@ -614,17 +627,24 @@ class InfinityTable {
         return results;
     }
 
-    update(id, updatedObject) {
+    async update(id, updatedObject) {
         let results = { "results": [], "failures": [] };
         let columnName = InfinityIdTag;
         let properties = Object.keys(updatedObject);
         let disintegratedId;
         if (this.#userDefinedPk) {
-            disintegratedId = await this.#configDBReader.any('SELECT "UserPK" AS "ActualId", split_part("CInfId",$3,1)::Int as "Type",split_part("CInfId",$3,2)::Int as "DBId",split_part("CInfId",$3,3)::Int as "TableNo", "UserPK" as "Row" FROM $1:name WHERE "UserPK" = $2', [(this.TableIdentifier + '-PK'), id, '-']);
+            disintegratedId = await this.#configDBReader.any('SELECT "UserPK" AS "ActualId", split_part("CInfId",$3,1)::Int as "Type",split_part("CInfId",$3,2)::Int as "Version",split_part("CInfId",$3,3)::Int as "DBId",split_part("CInfId",$3,4)::Int as "TableNo", "UserPK" as "Row" FROM $1:name WHERE "UserPK" = $2', [(this.TableIdentifier + '-PK'), id, '-']);
+            if (disintegratedId.length === 0) {
+                results.failures.push(Error("Id doesnot exists " + id));
+                return results;
+            }
+            else {
+                disintegratedId = disintegratedId[0];
+            }
             columnName = this.#primaryColumn.name;
         }
         else {
-            let disintegratedId = this.#idParser(id);
+            disintegratedId = this.#idParser(id);
             if (disintegratedId.Type !== this.TableIdentifier) throw new Error("Incorrect Id:" + id + " doesnot belong to this table.");
             disintegratedId.ActualId = id;
         }
@@ -637,25 +657,33 @@ class InfinityTable {
                 throw new Error(`Cannot update property ${propertyName} as its a system field.`);
             }
             else {
+                let idx = this.#columnsNames.indexOf(propertyName)
+                if (idx === -1) {
+                    results.failures.push("Invalid column name " + propertyName + " doesnot exists.");
+                    return results;
+                }
                 //TODO:Data type matches table def validations.
                 sql += pgp.as.format("$1:name = $2,", [propertyName, updatedObject[propertyName]]);
             }
         }
         sql = sql.slice(0, -1);
-        let tableName = this.#idConstruct(disintegratedId.DBId, disintegratedId.TableNo);
+        let tableName = this.#idConstruct(disintegratedId.Version, disintegratedId.DBId, disintegratedId.TableNo);
         let rowId = this.#userDefinedPk ? id : disintegratedId.Row;
-        sql = pgp.as.format("UPDATE $1:name SET $2:raw WHERE $3:name = $4 RETURNING *;", [tableName, sql, columnName, id, rowId]);
+        sql = pgp.as.format("UPDATE $1:name SET $2:raw WHERE $3:name = $4 RETURNING *;", [tableName, sql, columnName, rowId]);
 
-        const DBWriter = this.#retriveConnectionForDB(disintegratedId.DBId, 'W');
-
-        return DBWriter.any(sql);
+        const DBWriter = await this.#retriveConnectionForDB(disintegratedId.DBId, 'W');
+        results.results = await DBWriter.one(sql);
+        if (this.#userDefinedPk === false) {
+            results.results.InfId = this.#idConstruct(disintegratedId.Version, disintegratedId.DBId, disintegratedId.TableNo, results.results.InfId);
+        }
+        return results;
     }
 
-    bulkDelete() {
+    delete(ids) {
         throw new Error("Not implemented");
     }
 
-    alter() {
+    mutate() {
         throw new Error("Not implemented");
     }
 
@@ -678,3 +706,8 @@ class InfinityTable {
 //Docs
 //Validation
 //Tests
+//Need Notification channel for tables mutating on the fly.https://github.com/vitaly-t/pg-promise/wiki/Robust-Listeners
+//Need a table creation call back for hooking triggers if needed(EG:Audit)
+//Reclaim Lost Ids from Redis
+//Remove default indexing from the table create function.
+//Have config version for config database as a table
