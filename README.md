@@ -103,7 +103,7 @@ while (ctr > 0) {
 }
 
 console.time("Insertion");
-const result = await boundlessTable.bulkInsert(rows);
+const result = await boundlessTable.insert(rows);
 console.timeEnd("Insertion");
 ```
 5. **Search Data**

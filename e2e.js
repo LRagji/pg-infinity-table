@@ -79,7 +79,7 @@ const writeConfigParamsDB2 = {
     application_name: "e2e Test",
     max: 2 //2 Writer
 };
-let TypeId = 1;
+let TypeId = 3;
 let boundlessTable;
 let infinityDatabase;
 let main = async () => {
@@ -100,10 +100,10 @@ let main = async () => {
     }
 
 
-    //INSERTS
-    // let lctr = 0
+    // //INSERTS
+    // let lctr = 100
     // const rowsPerIteration = 100000;
-    // const totalIterations = 100;
+    // const totalIterations = 101;
     // while (lctr < totalIterations) {
     //     let offset = lctr * rowsPerIteration;
     //     let ctr = offset + rowsPerIteration;
@@ -116,7 +116,7 @@ let main = async () => {
     //     console.timeEnd("Payload Generation");
 
     //     console.time("Insertion");
-    //     let result = await boundlessTable.bulkInsert(payload);
+    //     let result = await boundlessTable.insert(payload);
     //     console.timeEnd("Insertion");
 
     //     if (result.failures.length > 0) {
@@ -208,6 +208,14 @@ let main = async () => {
     // //let results = await boundlessTable.update("2-0-1-998-40", { "value": getRandomInt(1, 10000) });
     // let results = await boundlessTable.update("49", { "value": getRandomInt(1, 10000) });
     // console.log(results);
+
+    // //Deletes
+    // await boundlessTable.softDrop();
+    // setTimeout(async () => {
+    //     let results = await boundlessTable.update("49", { "value": getRandomInt(1, 10000) });
+    //     console.log(results);
+    // }, 3000);
+
 };
 
 main().then((r) => {
