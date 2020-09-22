@@ -79,7 +79,7 @@ const writeConfigParamsDB2 = {
     application_name: "e2e Test",
     max: 2 //2 Writer
 };
-let TypeId = 3;
+let TypeId = 1;
 let boundlessTable;
 let infinityDatabase;
 let main = async () => {
@@ -209,8 +209,18 @@ let main = async () => {
     // let results = await boundlessTable.update("49", { "value": getRandomInt(1, 10000) });
     // console.log(results);
 
-    // //Deletes
+    // //DROP
     // await boundlessTable.softDrop();
+    // setTimeout(async () => {
+    //     let results = await boundlessTable.update("49", { "value": getRandomInt(1, 10000) });
+    //     console.log(results);
+    // }, 3000);
+
+    // // //Mutate
+    // await boundlessTable.mutate([{
+    //     "name": "node",
+    //     "datatype": "integer"
+    // }]);
     // setTimeout(async () => {
     //     let results = await boundlessTable.update("49", { "value": getRandomInt(1, 10000) });
     //     console.log(results);

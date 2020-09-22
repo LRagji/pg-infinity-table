@@ -14,6 +14,18 @@ const InfinityIdTag = "InfId";
 const PrimaryTag = "primary";
 const TableVersionDefault = 0;
 const NotificationTopic = "Types";
+const InfinityIdColumn = {
+    "name": InfinityIdTag,
+    "datatype": "bigint",
+    "filterable": { "sorted": "asc" },
+    "tag": InfinityIdTag
+};
+const InfinityStampColumn = {
+    "name": InfinityStampTag,
+    "datatype": "bigint",
+    "filterable": { "sorted": "asc" },
+    "tag": InfinityStampTag
+};
 
 module.exports = async function (indexerRedisConnectionString, pgReadConfigParams, pgWriteConfigParams) {
     configDBWriter = pgp(pgWriteConfigParams);
@@ -95,31 +107,20 @@ class InfinityDatabase {
 
     async createTable(tableDefinition) {
 
-        const infinityIdColumn = {
-            "name": InfinityIdTag,
-            "datatype": "bigint",
-            "filterable": { "sorted": "asc" },
-            "tag": InfinityIdTag
-        };
-        const infinityStampColumn = {
-            "name": InfinityStampTag,
-            "datatype": "bigint",
-            "filterable": { "sorted": "asc" },
-            "tag": InfinityStampTag
-        };
+
         let userDefinedPK = false;
         let userDefinedPKDatatype;
         const totalPrimaryColumns = tableDefinition.reduce((acc, e) => acc + (e.tag === PrimaryTag ? 1 : 0), 0);
         if (totalPrimaryColumns > 1) throw new Error("Table cannot have multiple primary columns");
-        if (totalPrimaryColumns === 0) tableDefinition.unshift(infinityIdColumn);
+        if (totalPrimaryColumns === 0) tableDefinition.unshift(InfinityIdColumn);
         if (totalPrimaryColumns === 1) {
             userDefinedPK = true;
             userDefinedPKDatatype = tableDefinition.find(e => e.tag === PrimaryTag)["datatype"];
         }
-        const totalInfinityStamoColumns = tableDefinition.reduce((acc, e) => acc + (e.tag === InfinityStampTag ? 1 : 0), 0);
-        if (totalInfinityStamoColumns > 1) throw new Error("Table cannot have multiple InfitiyStamp columns");
-        if (totalInfinityStamoColumns === 0) tableDefinition.push(infinityStampColumn);
-        if (totalInfinityStamoColumns == 1) {
+        const totalInfinityStampColumns = tableDefinition.reduce((acc, e) => acc + (e.tag === InfinityStampTag ? 1 : 0), 0);
+        if (totalInfinityStampColumns > 1) throw new Error("Table cannot have multiple InfitiyStamp columns");
+        if (totalInfinityStampColumns === 0) tableDefinition.push(InfinityStampColumn);
+        if (totalInfinityStampColumns == 1) {
             const infinityStampColumn = tableDefinition.find(e => e.tag === InfinityStampTag);
             if (infinityStampColumn.datatype !== "bigint") throw new Error("InfitiyStamp columns should have datatype as bigint.");
         }
@@ -234,6 +235,7 @@ class InfinityTable {
     #columnsNames
     #userDefinedPk = false;
     #primaryColumn
+    #stampColumn
     TableIdentifier = -1;
     TableVersion = -1;
 
@@ -698,7 +700,7 @@ class InfinityTable {
         let columnName = InfinityIdTag;
         let properties = Object.keys(updatedObject);
         let disintegratedId;
-        if (context.UserDefinedPk) {
+        if (context.userDefinedPk) {
             disintegratedId = await this.#configDBReader.any('SELECT "UserPK" AS "ActualId", split_part("CInfId",$3,1)::Int as "Type",split_part("CInfId",$3,2)::Int as "Version",split_part("CInfId",$3,3)::Int as "DBId",split_part("CInfId",$3,4)::Int as "TableNo", "UserPK" as "Row" FROM $1:name WHERE "UserPK" = $2', [(this.TableIdentifier + '-PK'), id, '-']);
             if (disintegratedId.length === 0) {
                 results.failures.push(Error("Id doesnot exists " + id));
@@ -715,6 +717,13 @@ class InfinityTable {
             disintegratedId.ActualId = id;
         }
 
+        let columnNames = context.tableColumnNames;
+        if (disintegratedId.Version != context.tableVersion) {
+            //Retrive table definition for that version.
+            columnNames = await this.#configDBReader.one('SELECT "Def" FROM "Types" WHERE "Id"=$1 AND "Version"=$2', [disintegratedId.Type, disintegratedId.Version]);
+            columnNames = columnNames.Def.map(e => JSON.parse(e).name);
+        }
+
         let sql = "";
         for (let index = 0; index < properties.length; index++) {
             const propertyName = properties[index];
@@ -723,15 +732,16 @@ class InfinityTable {
                 throw new Error(`Cannot update property ${propertyName} as its a system field.`);
             }
             else {
-                let idx = context.tableColumnNames.indexOf(propertyName)
+                let idx = columnNames.indexOf(propertyName)
                 if (idx === -1) {
-                    results.failures.push("Invalid column name " + propertyName + " doesnot exists.");
+                    results.failures.push("Invalid column name '" + propertyName + "' doesnot exists for version " + disintegratedId.Version);
                     return results;
                 }
                 //TODO:Data type matches table def validations.
                 sql += pgp.as.format("$1:name = $2,", [propertyName, updatedObject[propertyName]]);
             }
         }
+
         sql = sql.slice(0, -1);
         let tableName = this.#idConstruct(disintegratedId.Version, disintegratedId.DBId, disintegratedId.TableNo);
         let rowId = context.userDefinedPk ? id : disintegratedId.Row;
@@ -774,6 +784,9 @@ class InfinityTable {
             else if (columnDef.tag === InfinityIdTag) {
                 this.#primaryColumn = columnDef;
             }
+            else if (columnDef.tag === InfinityStampTag) {
+                this.#stampColumn = columnDef;
+            }
         });
     }
 
@@ -781,12 +794,34 @@ class InfinityTable {
         if (this.#def == undefined || this.TableVersion === -1) {
             throw new Error(`Table ${this.TableIdentifier} no longer exists or is deleted by another connection.`)
         }
-        return { "tableVersion": this.TableVersion, "tableDefinition": JSON.parse(JSON.stringify(this.#def)), "tableColumnNames": JSON.parse(JSON.stringify(this.#columnsNames)), "userDefinedPk": this.#userDefinedPk, "primaryColumn": JSON.parse(JSON.stringify(this.#primaryColumn)) };
+        return {
+            "tableVersion": this.TableVersion,
+            "tableDefinition": JSON.parse(JSON.stringify(this.#def)),
+            "tableColumnNames": JSON.parse(JSON.stringify(this.#columnsNames)),
+            "userDefinedPk": this.#userDefinedPk,
+            "primaryColumn": JSON.parse(JSON.stringify(this.#primaryColumn)),
+            "stampColumn": JSON.parse(JSON.stringify(this.#stampColumn))
+        };
     };
 
-    mutate() {
+    async mutate(tableDefinition) {
         const context = this.#isolateDefinationChanges();
-        throw new Error("Not implemented");
+        const totalPrimaryColumns = tableDefinition.reduce((acc, e) => acc + (e.tag === PrimaryTag ? 1 : 0), 0);
+        if (totalPrimaryColumns > 0) throw new Error("Table cannot change primary columns, please remove them from definition.");
+        const totalInfinityColumns = tableDefinition.reduce((acc, e) => acc + (e.tag === InfinityIdTag ? 1 : 0), 0);
+        if (totalInfinityColumns > 0) throw new Error("Table cannot change infinity columns, please remove them from definition.");
+        if (context.userDefinedPk === true) {
+            tableDefinition.unshift(context.primaryColumn);
+        }
+        else {
+            tableDefinition.unshift(InfinityIdColumn);
+        }
+        tableDefinition.push(context.stampColumn);
+
+        await this.#configDBWriter.tx((tx) => {
+            let sql = pgp.as.format('INSERT INTO "Types" ("Id","Def","Version") values ($1,$2,(SELECT MAX("Version")+1 FROM "Types" WHERE "Id"=$3)); SELECT pg_notify( $4, $3);', [this.TableIdentifier, tableDefinition, this.TableIdentifier.toString(), NotificationTopic])
+            return tx.any(sql);
+        });
     }
 
     async softDrop() {
@@ -801,17 +836,16 @@ class InfinityTable {
 //Handle Empty data from sql when no data is returned for query
 //Handle No DB id existing for Get call No Table Existing for get call No row existing for get call
 //While Inserting Searching and Updating verify the datatype matches the table defination
-//Alter Table
-//Drop Table
-//Update Rows
-//Delete Rows
+//BULK Update By Id
+//BULK Delete By Id
+//BULK Update By Condition
+//BULK Delete By Condition
 //Connection string resolver
 //Single connection for same connection strings
 //Parsed Statemnts
 //Docs
 //Validation
 //Tests
-//Need Notification channel for tables mutating on the fly.https://github.com/vitaly-t/pg-promise/wiki/Robust-Listeners
 //Need a table creation call back for hooking triggers if needed(EG:Audit)
 //Reclaim Lost Ids from Redis
 //Remove default indexing from the table create function.
