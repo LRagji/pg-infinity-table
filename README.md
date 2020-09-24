@@ -63,10 +63,10 @@ const writeConfigParamsDB2 = {
     application_name: "e2e Test",
     max: 2 //2 Writer
 };
-let resourceId = await infinityDatabase.registerResource(readConfigParamsDB1, writeConfigParamsDB1,maxTablesPerResource, maxRowsPerTable);
+let resourceId = await infinityDatabase.registerResource(readConfigParamsDB1, writeConfigParamsDB1, maxTablesPerResource, maxRowsPerTable);
 console.log("Resource Id:" + resourceId);
 
-resourceId = await infinityDatabase.registerResource(readConfigParamsDB2, writeConfigParamsDB2, 1000, maxRowsPerTable);
+resourceId = await infinityDatabase.registerResource(readConfigParamsDB2, writeConfigParamsDB2, maxTablesPerResource, maxRowsPerTable);
 console.log("Resource Id:" + resourceId);
 ```
 
