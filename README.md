@@ -13,7 +13,7 @@ This package combines redis cache and multiple postgres database together to con
 
 1. Install using `npm i pg-infinity-table`
 2. Require in your project. `const infinityType = require('pg-infinity-table');`
-3. Run postgres as local docker if required. `docker run --name pg-12.4 -e POSTGRES_PASSWORD=mysecretpassword -e POSTGRES_DB=pgpartition -p 5432:5432 -d postgres:12.4-alpine`
+3. Run postgres as local docker if required. `docker run --name pg-12.4 -e POSTGRES_PASSWORD=mysecretpassword -e POSTGRES_DB=pg-infinity-meta -p 5432:5432 -d postgres:12.4-alpine`
 4. Run redis as local docker if required. `docker run -p 6379:6379 -itd --rm redis:latest`
 5. Create 2 worker database for table across DB Eg: Infinity-1 & Infinity-2
 6. Instantiate with a postgres readers and writers and connections to redis. 
