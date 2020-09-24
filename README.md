@@ -27,12 +27,12 @@ const infinityTableType = require('pg-infinity-table');
 const metaRedisConectionString = "redis://127.0.0.1:6379/";
 const metaPGConectionString = "postgres://postgres:mysecretpassword@localhost:5432/pg-infinity-meta?application_name=perf-test";
 const readConfigParams = {
-    connectionString: defaultConectionString,
+    connectionString: metaPGConectionString,
     application_name: "Infinity Test",
     max: 4 //4 readers
 };
 const writeConfigParams = {
-    connectionString: defaultConectionString,
+    connectionString: metaPGConectionString,
     application_name: "Infinity Test",
     max: 2 //2 Writer
 };
