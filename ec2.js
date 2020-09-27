@@ -184,6 +184,7 @@ async function fill(boundlessTable, batches) {
     const batchSize = 10000;
     while (batchCounter < batches) {
         let batch = [];
+        console.log(`Batch# ${batchCounter}`);
         console.time("Payload Generation");
         let alertCounter = 0;
         while (alertCounter < 10000) {
