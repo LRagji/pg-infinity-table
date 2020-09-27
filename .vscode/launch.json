@@ -13,6 +13,18 @@
             ],
             "runtimeExecutable": "/Users/laukikragji/.nvm/versions/node/v12.18.3/bin/node",
             "program": "${workspaceFolder}/e2e.js"
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch ec2",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "runtimeExecutable": "/Users/laukikragji/.nvm/versions/node/v12.18.3/bin/node",
+            "args": ["fill","1","1"],
+            "program": "${workspaceFolder}/ec2.js"
+           
         }
     ]
 }
