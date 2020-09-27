@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "test",
-    "tools": "CD tools-docker/redis-cli && docker build -f redis-cli -t redis-cli . && docker build -f pg-client -t psql .",
+    "tools": "cd tools-docker/redis-cli && docker build -f redis-cli -t redis-cli . && docker build -f pg-client -t psql .",
     "dpg": "docker run --name pg-12.4 -e POSTGRES_PASSWORD=mysecretpassword -e POSTGRES_DB=pgpartition -p 5432:5432 -d postgres:12.4-alpine"
   },
   "repository": {
