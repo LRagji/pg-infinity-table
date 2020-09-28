@@ -1,0 +1,9 @@
+Table Name	Rows	Table Scan Time NON Matching WHERE clause	Where Query Plan	Full table Retrieval Client	Full table Retrieval Server	Result Size in bytes
+1000	10 K	2.9 Sec	1 Sec	14 Sec	71.655 ms	6370000 ~6.3MB
+999	1 L	3.585 Sec	1 Sec		480.4 ms	63700000 ~63MB
+998	5 L	5.9 Sec	3 Sec		2353.073 ms	318500000 ~318MB
+997	10 L	15.799 Sec	3 Sec		4693.839 ms	637000000 ~637MB
+996	25 L	31.4 Sec	15 Sec		11887.795 ms	1592500000 ~1.48GB
+995	50 L	36.264 Sec 1min 14 sec 	36 Sec		23435.219 ms	3185000000 ~2.97GB
+994	75 L	53.364 Sec 1min 48 sec	40 Sec		35788.215 ms	4771130000  ~4.4GB
+993	1 CR	100 Sec	43 Sec		73925.953 ms OOM	6370000000 ~6GB

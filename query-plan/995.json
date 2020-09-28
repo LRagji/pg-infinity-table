@@ -1,0 +1,95 @@
+[
+    {
+      "Plan": {
+        "Node Type": "Seq Scan",
+        "Parallel Aware": false,
+        "Relation Name": "1-0-1-995",
+        "Schema": "public",
+        "Alias": "1-0-1-995",
+        "Startup Cost": 0,
+        "Total Cost": 479167.05,
+        "Plan Rows": 1,
+        "Plan Width": 604,
+        "Actual Startup Time": 35171.945,
+        "Actual Total Time": 35171.946,
+        "Actual Rows": 0,
+        "Actual Loops": 1,
+        "Output": [
+          "\"EventAckDHPId\"",
+          "\"EventID\"",
+          "\"NodeID\"",
+          "\"EnteredDateTime\"",
+          "\"EventType\"",
+          "\"Severity\"",
+          "\"Machine\"",
+          "\"Measurement\"",
+          "\"Point\"",
+          "\"LeftDateTime\"",
+          "\"Setpoint1\"",
+          "\"Setpoint2\"",
+          "\"IsActive\"",
+          "\"AckedBy\"",
+          "\"AckedDateTime\"",
+          "\"Instrumentation\"",
+          "\"PointID\"",
+          "\"StatusBit\"",
+          "\"TriggerValue\"",
+          "\"Mode\"",
+          "\"Model\"",
+          "\"Speed\"",
+          "\"DeviceEventID\"",
+          "\"DeviceID\"",
+          "\"ModeName\"",
+          "\"ServerTimeStamp\"",
+          "\"WrittenTimestamp\"",
+          "\"SourceMachineName\""
+        ],
+        "Filter": "(\"1-0-1-995\".\"NodeID\" = '9089f703-3dbb-4494-99f9-efa6d4fa93bd'::text)",
+        "Rows Removed by Filter": 5000000,
+        "Shared Hit Blocks": 0,
+        "Shared Read Blocks": 416667,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 3,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Settings": {
+        "max_parallel_workers_per_gather": "0"
+      },
+      "Planning": {
+        "Shared Hit Blocks": 109,
+        "Shared Read Blocks": 24,
+        "Shared Dirtied Blocks": 1,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning Time": 36.617,
+      "Triggers": [],
+      "JIT": {
+        "Functions": 2,
+        "Options": {
+          "Inlining": false,
+          "Optimization": false,
+          "Expressions": true,
+          "Deforming": true
+        },
+        "Timing": {
+          "Generation": 0.425,
+          "Inlining": 0,
+          "Optimization": 0.194,
+          "Emission": 10.636,
+          "Total": 11.255
+        }
+      },
+      "Execution Time": 35172.429
+    }
+  ]
