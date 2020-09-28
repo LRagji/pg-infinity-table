@@ -300,6 +300,7 @@ class InfinityTable {
         this.#idConstruct = this.#idConstruct.bind(this);
         this.#isolateDefinationChanges = this.#isolateDefinationChanges.bind(this);
         this.#refreshDefinition = this.#refreshDefinition.bind(this);
+        this.#tableNameParser = this.#tableNameParser.bind(this);
 
         this.#idParser = this.#idParser;
 
@@ -639,6 +640,16 @@ class InfinityTable {
         return results;
     }
 
+    #tableNameParser = (tableName) => {
+        let parts = tableName.split("-");
+        return {
+            "Type": parseInt(parts[0]),
+            "Version": parseInt(parts[1]),
+            "DBId": parseInt(parts[2]),
+            "TableNo": parseInt(parts[3])
+        }
+    }
+
     async search(start, end, filter, pages = []) {
         // "filter": {
         //     "conditions": [
@@ -694,11 +705,18 @@ class InfinityTable {
         if (pages.length > 0) {
             let searchPage = pages.shift();
             results.pages = pages.map(e => ({ "page": e.Page, "start": e.Start, "end": e.End }));
+            const disintegratedPage = this.#tableNameParser(searchPage);
+            let columnNames = context.tableColumnNames;
+            if (disintegratedPage.Version != context.tableVersion) {
+                //Retrive table definition for that version.
+                columnNames = await this.#configDBReader.one('SELECT "Def" FROM "Types" WHERE "Id"=$1 AND "Version"=$2', [this.TableIdentifier, disintegratedPage.Version]);
+                columnNames = columnNames.Def.map(e => JSON.parse(e).name);
+            }
             let where = "";
             if (filter !== undefined) {
                 let conditions = filter.conditions.map(c => {
-                    if (context.tableColumnNames.indexOf(c.name) === -1) {
-                        throw new Error(`Field ${c.name} is not a part of this table.`);
+                    if (columnNames.indexOf(c.name) === -1) {
+                        throw new Error(`Cannot filter on field "${c.name}" as its doesnt exists on version ${disintegratedPage.Version}.`);
                     }
                     if (this.filterOperators.has(c.operator) == false) {
                         throw new Error(`Operator ${c.operator} not supported.`);
@@ -753,7 +771,7 @@ class InfinityTable {
         let columnNames = context.tableColumnNames;
         if (disintegratedId.Version != context.tableVersion) {
             //Retrive table definition for that version.
-            columnNames = await this.#configDBReader.one('SELECT "Def" FROM "Types" WHERE "Id"=$1 AND "Version"=$2', [disintegratedId.Type, disintegratedId.Version]);
+            columnNames = await this.#configDBReader.one('SELECT "Def" FROM "Types" WHERE "Id"=$1 AND "Version"=$2', [this.TableIdentifier, disintegratedId.Version]);
             columnNames = columnNames.Def.map(e => JSON.parse(e).name);
         }
 
