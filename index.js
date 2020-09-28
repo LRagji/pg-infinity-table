@@ -134,7 +134,40 @@ class InfinityDatabase {
                     "UserPK" ${userDefinedPKDatatype} NOT NULL,
                     "CInfId" text NOT NULL,
                     PRIMARY KEY ("UserPK")
-                );`); //THIS table should be partitioned with HASH for 20CR rows
+                ) PARTITION BY hash ("UserPK");
+                CREATE TABLE public."${tIdentifier.Id}-PK-0" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 0);
+                CREATE TABLE public."${tIdentifier.Id}-PK-1" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 1);
+                CREATE TABLE public."${tIdentifier.Id}-PK-2" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 2);
+                CREATE TABLE public."${tIdentifier.Id}-PK-3" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 3);
+                CREATE TABLE public."${tIdentifier.Id}-PK-4" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 4);
+                CREATE TABLE public."${tIdentifier.Id}-PK-5" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 5);
+                CREATE TABLE public."${tIdentifier.Id}-PK-6" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 6);
+                CREATE TABLE public."${tIdentifier.Id}-PK-7" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 7);
+                CREATE TABLE public."${tIdentifier.Id}-PK-8" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 8);
+                CREATE TABLE public."${tIdentifier.Id}-PK-9" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 9);
+                CREATE TABLE public."${tIdentifier.Id}-PK-10" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 10);
+                CREATE TABLE public."${tIdentifier.Id}-PK-11" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 11);
+                CREATE TABLE public."${tIdentifier.Id}-PK-12" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 12);
+                CREATE TABLE public."${tIdentifier.Id}-PK-13" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 13);
+                CREATE TABLE public."${tIdentifier.Id}-PK-14" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 14);
+                CREATE TABLE public."${tIdentifier.Id}-PK-15" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 15);
+                CREATE TABLE public."${tIdentifier.Id}-PK-16" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 16);
+                CREATE TABLE public."${tIdentifier.Id}-PK-17" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 17);
+                CREATE TABLE public."${tIdentifier.Id}-PK-18" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 18);
+                CREATE TABLE public."${tIdentifier.Id}-PK-19" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 19);
+                CREATE TABLE public."${tIdentifier.Id}-PK-20" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 20);
+                CREATE TABLE public."${tIdentifier.Id}-PK-21" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 21);
+                CREATE TABLE public."${tIdentifier.Id}-PK-22" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 22);
+                CREATE TABLE public."${tIdentifier.Id}-PK-23" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 23);
+                CREATE TABLE public."${tIdentifier.Id}-PK-24" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 24);
+                CREATE TABLE public."${tIdentifier.Id}-PK-25" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 25);
+                CREATE TABLE public."${tIdentifier.Id}-PK-26" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 26);
+                CREATE TABLE public."${tIdentifier.Id}-PK-27" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 27);
+                CREATE TABLE public."${tIdentifier.Id}-PK-28" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 28);
+                CREATE TABLE public."${tIdentifier.Id}-PK-29" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 29);
+                CREATE TABLE public."${tIdentifier.Id}-PK-30" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 30);
+                CREATE TABLE public."${tIdentifier.Id}-PK-31" PARTITION OF public."${tIdentifier.Id}-PK" FOR VALUES WITH (MODULUS 32, REMAINDER 31);
+                `); //THIS table should be partitioned with HASH for 20CR rows with power of 2 range .
             }
             await trans.none(`CREATE TABLE public."${tIdentifier.Id}-Min"
             (

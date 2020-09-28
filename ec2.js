@@ -173,6 +173,16 @@ entryPoint = async () => {
         console.timeEnd("Fill");
 
     }
+    else if (process.argv[2].toLowerCase() === "filter") {
+        const typeId = parseInt(process.argv[3]);
+        const filter = JSON.parse(process.argv[4]);
+        const boundlessTable = await infinityDatabase.loadTable(typeId);
+        console.time("Filter");
+        let results = await boundlessTable.search(filter.start, filter.end, filter.filter, filter.pages);
+        console.timeEnd("Filter");
+        console.table(results.results);
+        console.table(results.pages);
+    }
     else {
         console.log("Unknown argument:" + process.argv[2]);
     }
