@@ -513,17 +513,22 @@ class InfinityTable {
                     insertedRows = await this.#configDBWriter.tx(async indexTran => {
                         //TODO: Validate if this MIN MAX index is stored in redis then what is the read performance.
                         if (context.userDefinedPk) {
+                            console.time("PG-PK");
                             let sql = this.#indexPrimarykey((this.TableIdentifier + "-PK"), items);
                             await indexTran.none(sql);
+                            console.timeEnd("PG-PK");
                         }
                         return await DBWritter.tx(async instanceTrans => {
+                            console.time("PG-Instances");
                             let sql = this.#sqlTransform(tableName, items, context);
                             const instanceResults = await instanceTrans.any(sql);
+                            console.timeEnd("PG-Instances");
+                            console.time("PG-Indexing");
                             sql = this.#indexInfinityStampMin((this.TableIdentifier + "-Min"), items, tableName);
                             await indexTran.none(sql);
                             sql = this.#indexInfinityStampMax((this.TableIdentifier + "-Max"), items, tableName);
                             await indexTran.none(sql);
-
+                            console.timeEnd("PG-Indexing");
                             return instanceResults;
                         });
                     });
