@@ -156,7 +156,7 @@ entryPoint = async () => {
     const infinityDatabase = await infinityTable(defaultRedisConnectionString, readConfigParams, writeConfigParams);
 
     if (process.argv[2].toLowerCase() === "register") {
-        const tables = 1000, rowsPerTable = 10000000;
+        const tables = 3000, rowsPerTable = 1000000;
         let resourceId = await infinityDatabase.registerResource(readConfigParamsShard1, writeConfigParamsShard1, tables, rowsPerTable);
         console.log(`Shard-1 registered with id ${resourceId}`);
         resourceId = await infinityDatabase.registerResource(readConfigParamsShard2, writeConfigParamsShard2, tables, rowsPerTable);
